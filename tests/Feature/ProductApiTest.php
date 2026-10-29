@@ -11,8 +11,8 @@ it('lists products with pagination and category filter', function () {
 
     $response->assertOk()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('data.meta.per_page', 1)
-        ->assertJsonCount(1, 'data.products');
+        ->assertJsonPath('meta.per_page', 1)
+        ->assertJsonCount(1, 'products');
 });
 
 it('shows product details with available quantity from inventory', function () {
@@ -22,7 +22,7 @@ it('shows product details with available quantity from inventory', function () {
     $response = $this->getJson("/api/v1/products/{$product->id}");
 
     $response->assertOk()
-        ->assertJsonPath('data.product.available_quantity', 7);
+        ->assertJsonPath('product.available_quantity', 7);
 });
 
 it('allows admin to create a product and seed inventory quantity', function () {
@@ -37,8 +37,8 @@ it('allows admin to create a product and seed inventory quantity', function () {
     ], withBearerToken($admin));
 
     $response->assertCreated()
-        ->assertJsonPath('data.product.name', 'Phone')
-        ->assertJsonPath('data.product.available_quantity', 12);
+        ->assertJsonPath('product.name', 'Phone')
+        ->assertJsonPath('product.available_quantity', 12);
 });
 
 it('rejects product creation for non admin users', function () {

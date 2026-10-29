@@ -11,7 +11,7 @@ it('lists authenticated user notifications', function () {
     $response = $this->getJson('/api/v1/notifications', withBearerToken($user));
 
     $response->assertOk()
-        ->assertJsonCount(2, 'data.notifications');
+        ->assertJsonCount(2, 'notifications');
 });
 
 it('marks a notification as read for its owner', function () {
@@ -25,5 +25,5 @@ it('marks a notification as read for its owner', function () {
     );
 
     $response->assertOk()
-        ->assertJsonPath('data.notification.is_read', true);
+        ->assertJsonPath('notification.is_read', true);
 });

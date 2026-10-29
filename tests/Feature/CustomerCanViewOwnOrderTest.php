@@ -10,5 +10,5 @@ it('allows a customer to view their own order by id', function () {
     $this->getJson("/api/v1/orders/{$order->id}", withBearerToken($customer))
         ->assertOk()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('data.order.id', $order->id);
+        ->assertJsonPath('order.id', $order->id);
 });

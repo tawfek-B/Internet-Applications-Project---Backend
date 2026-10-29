@@ -16,8 +16,10 @@ class ApiResponse
             'message' => $message,
         ];
 
-        if ($data !== null) {
-            $payload['data'] = $data;
+        if (is_array($data)) {
+            $payload = array_merge($payload, $data);
+        } elseif ($data !== null) {
+            $payload['result'] = $data;
         }
 
         return response()->json($payload, $status);

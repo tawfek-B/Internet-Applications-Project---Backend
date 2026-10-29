@@ -13,7 +13,7 @@ it('registers a customer and returns jwt token', function () {
 
     $response->assertCreated()
         ->assertJsonPath('success', true)
-        ->assertJsonStructure(['data' => ['access_token', 'user']]);
+        ->assertJsonStructure(['access_token', 'user']);
 
     $this->assertDatabaseHas('users', ['email' => 'new@example.com', 'is_admin' => false]);
 });
@@ -30,7 +30,7 @@ it('logs in with valid credentials', function () {
 
     $response->assertOk()
         ->assertJsonPath('success', true)
-        ->assertJsonStructure(['data' => ['access_token']]);
+        ->assertJsonStructure(['access_token']);
 });
 
 it('rate limits repeated failed login attempts', function () {

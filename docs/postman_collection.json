@@ -39,8 +39,8 @@
                 "exec": [
                   "if (pm.response.code === 201) {",
                   "  const j = pm.response.json();",
-                  "  if (j.data && j.data.access_token) {",
-                  "    pm.collectionVariables.set('customer2_token', j.data.access_token);",
+                  "  if (j.access_token) {",
+                  "    pm.collectionVariables.set('customer2_token', j.access_token);",
                   "  }",
                   "}"
                 ],
@@ -67,8 +67,8 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const j = pm.response.json();",
-                  "pm.test('Has token', () => pm.expect(j.data.access_token).to.be.a('string'));",
-                  "pm.collectionVariables.set('admin_token', j.data.access_token);"
+                  "pm.test('Has token', () => pm.expect(j.access_token).to.be.a('string'));",
+                  "pm.collectionVariables.set('admin_token', j.access_token);"
                 ],
                 "type": "text/javascript"
               }
@@ -93,7 +93,7 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const j = pm.response.json();",
-                  "pm.collectionVariables.set('customer_token', j.data.access_token);"
+                  "pm.collectionVariables.set('customer_token', j.access_token);"
                 ],
                 "type": "text/javascript"
               }
@@ -179,7 +179,7 @@
               "script": {
                 "exec": [
                   "if (pm.response.code === 200) {",
-                  "  const p = pm.response.json().data.product;",
+                  "  const p = pm.response.json().product;",
                   "  if (p && p.id) pm.collectionVariables.set('product_id', String(p.id));",
                   "}"
                 ],
@@ -245,7 +245,7 @@
               "script": {
                 "exec": [
                   "if (pm.response.code === 201) {",
-                  "  const o = pm.response.json().data.order;",
+                  "  const o = pm.response.json().order;",
                   "  if (o && o.id) pm.collectionVariables.set('order_id', String(o.id));",
                   "}"
                 ],
@@ -305,7 +305,7 @@
               "script": {
                 "exec": [
                   "if (pm.response.code === 200) {",
-                  "  const orders = pm.response.json().data.orders;",
+                  "  const orders = pm.response.json().orders;",
                   "  if (orders && orders.length) {",
                   "    pm.collectionVariables.set('order_id', String(orders[0].id));",
                   "  }",
@@ -351,7 +351,7 @@
         {
           "name": "Update status (admin) delivering",
           "request": {
-            "method": "PATCH",
+            "method": "PUT",
             "header": [
               { "key": "Authorization", "value": "Bearer {{admin_token}}" },
               { "key": "Content-Type", "value": "application/json" }
@@ -366,7 +366,7 @@
         {
           "name": "Update status (customer) — expect 403",
           "request": {
-            "method": "PATCH",
+            "method": "PUT",
             "header": [
               { "key": "Authorization", "value": "Bearer {{customer_token}}" },
               { "key": "Content-Type", "value": "application/json" }
@@ -391,7 +391,7 @@
               "script": {
                 "exec": [
                   "if (pm.response.code === 200) {",
-                  "  const list = pm.response.json().data.notifications;",
+                  "  const list = pm.response.json().notifications;",
                   "  if (list && list.length) pm.collectionVariables.set('notification_id', String(list[0].id));",
                   "}"
                 ],

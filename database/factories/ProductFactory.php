@@ -19,9 +19,9 @@ class ProductFactory extends Factory
             'name' => fake()->words(3, true),
             'description' => fake()->sentence(),
             'price' => fake()->randomFloat(2, 1, 100),
-            'stock' => 0,
+            'stock' => fake()->numberBetween(1, 100),
             'category' => fake()->randomElement(['electronics', 'books', 'home', 'general']),
-            'image_url' => null,
+            'image_url' => fake()->imageUrl(),
         ];
     }
 }

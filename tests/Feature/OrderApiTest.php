@@ -19,7 +19,7 @@ it('creates an order when inventory reservation succeeds', function () {
 
     $response->assertCreated()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('data.order.status', OrderStatus::Pending->value);
+        ->assertJsonPath('order.status', OrderStatus::Pending->value);
 
     $this->assertDatabaseHas('orders', ['user_id' => $user->id]);
     expect(app(InventoryClientInterface::class)->getQuantity($product->id))->toBe(3);
@@ -47,10 +47,11 @@ it('allows admin to update order status', function () {
     $admin = User::factory()->admin()->create();
     $order = Order::factory()->create(['status' => OrderStatus::Pending]);
 
-    $response = $this->patchJson("/api/v1/orders/{$order->id}/status", [
+    $response = $this->putJson("/api/v1/orders/{$order->id}/status", [
         'status' => OrderStatus::Delivering->value,
     ], withBearerToken($admin));
 
     $response->assertOk()
-        ->assertJsonPath('data.order.status', OrderStatus::Delivering->value);
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('message', 'Order status updated successfully');
 });

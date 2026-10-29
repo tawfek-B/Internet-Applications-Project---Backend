@@ -12,11 +12,11 @@ it('rejects access to another users order', function () {
         ->assertForbidden();
 });
 
-it('rejects order status updates from customers', function () {
+it('rejects order status updates from non admin users', function () {
     $customer = User::factory()->create();
     $order = Order::factory()->create(['user_id' => $customer->id]);
 
-    $this->patchJson("/api/v1/orders/{$order->id}/status", [
+    $this->putJson("/api/v1/orders/{$order->id}/status", [
         'status' => 'delivering',
     ], withBearerToken($customer))->assertForbidden();
 });
