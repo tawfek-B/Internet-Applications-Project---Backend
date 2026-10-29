@@ -1,0 +1,433 @@
+{
+  "info": {
+    "name": "WebProject — الطلب 1 + 2 (API v1)",
+    "description": "Import this collection. Set base_url = http://127.0.0.1:8000. Run inventory: npm start in inventory-service before quantity/order tests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "admin_token", "value": "" },
+    { "key": "customer_token", "value": "" },
+    { "key": "customer2_token", "value": "" },
+    { "key": "product_id", "value": "1" },
+    { "key": "order_id", "value": "1" },
+    { "key": "notification_id", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "0 — قبل ما تبلشي",
+      "item": [
+        {
+          "name": "Health (Laravel up)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/up"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — Users (JWT + Rate limit) [طلب 1]",
+      "item": [
+        {
+          "name": "Register customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const j = pm.response.json();",
+                  "  if (j.data && j.data.access_token) {",
+                  "    pm.collectionVariables.set('customer2_token', j.data.access_token);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Customer\",\n  \"email\": \"newcustomer@test.com\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/register"
+          }
+        },
+        {
+          "name": "Login admin (احفظ token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Has token', () => pm.expect(j.data.access_token).to.be.a('string'));",
+                  "pm.collectionVariables.set('admin_token', j.data.access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"password\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Login customer (احفظ token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('customer_token', j.data.access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer@example.com\",\n  \"password\": \"password\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Me (JWT)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customer_token}}" }],
+            "url": "{{base_url}}/api/v1/auth/me"
+          }
+        },
+        {
+          "name": "Login wrong password (401)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"wrong-password\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Rate limit — شغّلي 6 مرات متتالية (429)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ratelimit@test.com\",\n  \"password\": \"wrong\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Logout customer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customer_token}}" }],
+            "url": "{{base_url}}/api/v1/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — Products [طلب 1 + كمية طلب 2]",
+      "item": [
+        {
+          "name": "List products + pagination + category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products?category=general&per_page=5&page=1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "products"],
+              "query": [
+                { "key": "category", "value": "general" },
+                { "key": "per_page", "value": "5" },
+                { "key": "page", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Show product + available_quantity [طلب 2]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const p = pm.response.json().data.product;",
+                  "  if (p && p.id) pm.collectionVariables.set('product_id', String(p.id));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/products/{{product_id}}"
+          }
+        },
+        {
+          "name": "Create product (admin) + seed inventory",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "name", "value": "Postman Phone", "type": "text" },
+                { "key": "description", "value": "Created from Postman", "type": "text" },
+                { "key": "price", "value": "99.99", "type": "text" },
+                { "key": "category", "value": "electronics", "type": "text" },
+                { "key": "initial_quantity", "value": "20", "type": "text" }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/products"
+          }
+        },
+        {
+          "name": "Create product (customer) — expect 403",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customer_token}}" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Blocked\",\n  \"description\": \"Nope\",\n  \"price\": 10,\n  \"category\": \"general\",\n  \"initial_quantity\": 1\n}"
+            },
+            "url": "{{base_url}}/api/v1/products"
+          }
+        },
+        {
+          "name": "Show product — inventory OFF (503) [طلب 2]",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/products/{{product_id}}",
+            "description": "أوقفي npm start في inventory-service ثم Send"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — Orders [طلب 1 + حجز طلب 2]",
+      "item": [
+        {
+          "name": "Create order (customer) — reserve inventory",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const o = pm.response.json().data.order;",
+                  "  if (o && o.id) pm.collectionVariables.set('order_id', String(o.id));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 1 }\n  ]\n}"
+            },
+            "url": "{{base_url}}/api/v1/orders"
+          }
+        },
+        {
+          "name": "Create order — insufficient stock (422) [طلب 2]",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 99999 }\n  ]\n}"
+            },
+            "url": "{{base_url}}/api/v1/orders"
+          }
+        },
+        {
+          "name": "Create order — inventory OFF (503) [طلب 2]",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"product_id\": {{product_id}}, \"quantity\": 1 }\n  ]\n}"
+            },
+            "url": "{{base_url}}/api/v1/orders",
+            "description": "أوقفي inventory-service ثم Send"
+          }
+        },
+        {
+          "name": "List my orders (customer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const orders = pm.response.json().data.orders;",
+                  "  if (orders && orders.length) {",
+                  "    pm.collectionVariables.set('order_id', String(orders[0].id));",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customer_token}}" }],
+            "url": "{{base_url}}/api/v1/orders?per_page=10",
+            "description": "بعد Send، يتحدّث order_id تلقائياً من أول طلب بالقائمة — ثم استخدمي Show my order"
+          }
+        },
+        {
+          "name": "List all orders (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_url}}/api/v1/orders"
+          }
+        },
+        {
+          "name": "Show my order (customer)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customer_token}}" }],
+            "url": "{{base_url}}/api/v1/orders/{{order_id}}",
+            "description": "URL مثال: /api/v1/orders/7 — لازم order_id من قائمتك (List my orders) مو الرقم 1 افتراضياً"
+          }
+        },
+        {
+          "name": "Show order — other user (403) [طلب 1]",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customer2_token}}" }],
+            "url": "{{base_url}}/api/v1/orders/{{order_id}}",
+            "description": "سجّلي customer2_token من Register أو login مستخدم ثاني"
+          }
+        },
+        {
+          "name": "Update status (admin) delivering",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"delivering\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/orders/{{order_id}}/status"
+          }
+        },
+        {
+          "name": "Update status (customer) — expect 403",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"completed\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/orders/{{order_id}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 — Notifications [طلب 1]",
+      "item": [
+        {
+          "name": "List notifications",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const list = pm.response.json().data.notifications;",
+                  "  if (list && list.length) pm.collectionVariables.set('notification_id', String(list[0].id));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customer_token}}" }],
+            "url": "{{base_url}}/api/v1/notifications"
+          }
+        },
+        {
+          "name": "Mark notification read",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customer_token}}" }],
+            "url": "{{base_url}}/api/v1/notifications/{{notification_id}}/read"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 — Security headers [طلب 1]",
+      "item": [
+        {
+          "name": "Products (check headers in Postman)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/products",
+            "description": "Headers tab in response: X-Content-Type-Options, X-Frame-Options"
+          }
+        }
+      ]
+    }
+  ]
+}

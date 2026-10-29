@@ -2,34 +2,42 @@
 
 namespace Database\Seeders;
 
-use App\Models\Order;
-use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\Inventory\InventoryClientInterface;
+use App\Services\Inventory\InventoryException;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Log;
 
 class DatabaseSeeder extends Seeder
 {
     use WithoutModelEvents;
 
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'password' => bcrypt('password'),
-            'is_admin' => true,
+        User::factory()->admin()->create([
+            'name' => 'Admin User',
+            'email' => 'admin@example.com',
         ]);
 
-        Product::factory(10)->create();
-        
-        OrderItem::factory(10)->create();
-        Order::factory(10)->create();
+        User::factory()->create([
+            'name' => 'Customer User',
+            'email' => 'customer@example.com',
+        ]);
+
+        /** @var InventoryClientInterface $inventory */
+        $inventory = app(InventoryClientInterface::class);
+
+        Product::factory(10)->create()->each(function (Product $product) use ($inventory): void {
+            try {
+                $inventory->setQuantity($product->id, fake()->numberBetween(5, 50));
+            } catch (InventoryException $exception) {
+                Log::warning('Inventory seed skipped for product {id}: {message}', [
+                    'id' => $product->id,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        });
     }
 }

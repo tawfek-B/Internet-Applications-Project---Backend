@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info:
+  title: E-Commerce API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /auth/register:
+    post:
+      summary: Register customer
+      responses:
+        '201':
+          description: Created
+  /auth/login:
+    post:
+      summary: Login (rate limited)
+      responses:
+        '200':
+          description: OK
+        '429':
+          description: Too many attempts
+  /products:
+    get:
+      summary: List products (category filter + pagination)
+    post:
+      summary: Create product (admin)
+      security:
+        - bearerAuth: []
+  /products/{id}:
+    get:
+      summary: Product details with available quantity
+  /orders:
+    get:
+      summary: List orders
+      security:
+        - bearerAuth: []
+    post:
+      summary: Create order with inventory reservation
+      security:
+        - bearerAuth: []
+  /orders/{id}:
+    get:
+      summary: Show order
+      security:
+        - bearerAuth: []
+  /orders/{id}/status:
+    patch:
+      summary: Update order status (admin)
+      security:
+        - bearerAuth: []
+  /notifications:
+    get:
+      summary: List notifications
+      security:
+        - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

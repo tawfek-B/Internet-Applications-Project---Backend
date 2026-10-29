@@ -17,12 +17,33 @@ services:
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+            INVENTORY_DRIVER: http
+            INVENTORY_HTTP_URL: http://inventory:50052
+            INVENTORY_GRPC_HOST: inventory:50051
         volumes:
             - '.:/var/www/html'
         networks:
             - sail
         depends_on:
             - mysql
+            - inventory
+    inventory:
+        build:
+            context: ./inventory-service
+            dockerfile: Dockerfile
+        ports:
+            - '${INVENTORY_PORT:-50051}:50051'
+            - '${INVENTORY_HTTP_PORT:-50052}:50052'
+        volumes:
+            - './proto:/proto:ro'
+            - './inventory-service/data:/app/data'
+        environment:
+            GRPC_PORT: '50051'
+            INVENTORY_HTTP_PORT: '50052'
+            INVENTORY_HTTP_BIND: '0.0.0.0'
+            PROTO_PATH: /proto/inventory.proto
+        networks:
+            - sail
     mysql:
         image: 'mysql:8.4'
         ports:

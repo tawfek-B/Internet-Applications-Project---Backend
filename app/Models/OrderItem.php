@@ -2,19 +2,31 @@
 
 namespace App\Models;
 
+use Database\Factories\OrderItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class OrderItem extends Model
 {
+    /** @use HasFactory<OrderItemFactory> */
     use HasFactory;
-    //
+
     protected $fillable = [
         'order_id',
         'product_id',
         'quantity',
-        'price',
+        'unit_price',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'unit_price' => 'decimal:2',
+        ];
+    }
 
     public function order()
     {
