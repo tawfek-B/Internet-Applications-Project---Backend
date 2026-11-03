@@ -309,6 +309,24 @@ function startHttpBridge() {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/products/quantities') {
+        const idsParam = url.searchParams.get('ids') || '';
+        const ids = idsParam
+          .split(',')
+          .map((part) => Number(part.trim()))
+          .filter((id) => Number.isFinite(id) && id > 0);
+
+        const quantities = {};
+        for (const productId of ids) {
+          const result = await invokeHandler(getQuantity, { product_id: productId });
+          quantities[String(productId)] = Number(result.available);
+        }
+
+        res.statusCode = 200;
+        res.end(JSON.stringify({ quantities }));
+        return;
+      }
+
       if (req.method === 'POST' && url.pathname === '/reservations') {
         const raw = await readRequestBody(req);
         const body = JSON.parse(raw || '{}');

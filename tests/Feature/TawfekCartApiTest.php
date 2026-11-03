@@ -7,6 +7,7 @@ use App\Models\User;
 it('rejects add to cart when quantity exceeds product stock', function () {
     $user = User::factory()->create();
     $product = Product::factory()->create(['stock' => 3]);
+    seedInventory($product->id, 3);
 
     $this->postJson("/api/v1/addToCart/{$product->id}", [
         'quantity' => 2,
@@ -24,6 +25,7 @@ it('rejects add to cart when quantity exceeds product stock', function () {
 it('adds a product to the cart', function () {
     $user = User::factory()->create();
     $product = Product::factory()->create(['price' => 10]);
+    seedInventory($product->id, 10);
 
     $response = $this->postJson("/api/v1/addToCart/{$product->id}", [
         'quantity' => 2,

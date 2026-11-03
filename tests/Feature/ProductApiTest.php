@@ -10,9 +10,8 @@ it('lists products with pagination and category filter', function () {
     $response = $this->getJson('/api/v1/products?category=books&per_page=1');
 
     $response->assertOk()
-        ->assertJsonPath('success', true)
-        ->assertJsonPath('meta.per_page', 1)
-        ->assertJsonCount(1, 'products');
+        ->assertJsonCount(1, 'products')
+        ->assertJsonStructure(['products' => [['id', 'name', 'description', 'price', 'stock', 'image_url']]]);
 });
 
 it('shows product details with available quantity from inventory', function () {
@@ -22,7 +21,8 @@ it('shows product details with available quantity from inventory', function () {
     $response = $this->getJson("/api/v1/products/{$product->id}");
 
     $response->assertOk()
-        ->assertJsonPath('product.available_quantity', 7);
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('product.stock', 7);
 });
 
 it('allows admin to create a product and seed inventory quantity', function () {

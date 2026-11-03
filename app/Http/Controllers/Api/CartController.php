@@ -6,23 +6,36 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\AddToCartRequest;
 use App\Models\Product;
 use App\Services\Cart\CartTotalsService;
-use App\Support\TawfekApiFormatter;
+use App\Services\Inventory\InventoryClientInterface;
+use App\Services\Inventory\InventoryException;
+use App\Support\ContractResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CartController extends Controller
 {
-    public function __construct(private readonly CartTotalsService $cartTotals) {}
+    public function __construct(
+        private readonly CartTotalsService $cartTotals,
+        private readonly InventoryClientInterface $inventory,
+    ) {}
 
     public function add(AddToCartRequest $request, Product $product): JsonResponse
     {
         $user = $request->user();
         $quantity = (int) $request->input('quantity');
 
+        try {
+            $availableStock = $this->inventory->getQuantity($product->id);
+        } catch (InventoryException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], $exception->httpStatus);
+        }
+
         $cartItem = $user->cart()->where('product_id', $product->id)->first();
         $existingQuantity = $cartItem ? (int) $cartItem->quantity : 0;
         $requestedTotal = $existingQuantity + $quantity;
-        $availableStock = (int) $product->fresh()->stock;
 
         if ($requestedTotal > $availableStock) {
             return response()->json([
@@ -48,7 +61,7 @@ class CartController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Product added to cart successfully',
-            'cart' => TawfekApiFormatter::cartCollection($cart),
+            'cart' => ContractResponse::cartCollection($cart),
             'totalItems' => $totals['totalItems'],
             'totalPrice' => $totals['totalPrice'],
         ]);
@@ -62,7 +75,7 @@ class CartController extends Controller
 
         return response()->json([
             'success' => true,
-            'cart' => TawfekApiFormatter::cartCollection($cart),
+            'cart' => ContractResponse::cartCollection($cart),
             'totalItems' => (string) $totals['totalItems'],
             'totalPrice' => (string) $totals['totalPrice'],
         ]);

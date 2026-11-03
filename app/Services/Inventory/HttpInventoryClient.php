@@ -20,6 +20,26 @@ class HttpInventoryClient implements InventoryClientInterface
         return (int) ($result['available'] ?? 0);
     }
 
+    public function getQuantities(array $productIds): array
+    {
+        if ($productIds === []) {
+            return [];
+        }
+
+        $ids = implode(',', array_map('intval', $productIds));
+        $result = $this->request('GET', '/products/quantities?ids='.$ids);
+
+        /** @var array<string, int|float|string> $raw */
+        $raw = $result['quantities'] ?? [];
+
+        $quantities = [];
+        foreach ($raw as $productId => $available) {
+            $quantities[(int) $productId] = (int) $available;
+        }
+
+        return $quantities;
+    }
+
     public function reserve(string $reservationId, array $items): bool
     {
         $result = $this->request('POST', '/reservations', [

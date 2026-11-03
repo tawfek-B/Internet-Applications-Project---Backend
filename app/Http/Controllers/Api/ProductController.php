@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api\V1\Products;
+namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreProductRequest;
@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Services\Inventory\InventoryClientInterface;
 use App\Services\Inventory\InventoryException;
 use App\Support\ApiResponse;
+use App\Support\ContractResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -29,38 +30,41 @@ class ProductController extends Controller
             perPage: min(max((int) $request->input('per_page', 15), 1), 100),
         );
 
-        $products->getCollection()->transform(function (Product $product) {
-            try {
-                $product->available_quantity = $this->inventory->getQuantity($product->id);
-            } catch (InventoryException) {
-                $product->available_quantity = null;
-            }
+        $productIds = collect($products->items())
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
 
-            return $product;
-        });
+        try {
+            $stockByProductId = $this->inventory->getQuantities($productIds);
+        } catch (InventoryException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], $exception->httpStatus);
+        }
 
-        return ApiResponse::success([
-            'products' => ProductResource::collection($products->items()),
-            'meta' => [
-                'current_page' => $products->currentPage(),
-                'last_page' => $products->lastPage(),
-                'per_page' => $products->perPage(),
-                'total' => $products->total(),
-            ],
+        return response()->json([
+            'products' => ContractResponse::productList($products->items(), $stockByProductId),
         ]);
     }
 
     public function show(Product $product): JsonResponse
     {
         try {
-            $product->available_quantity = $this->inventory->getQuantity($product->id);
+            $stock = $this->inventory->getQuantity($product->id);
         } catch (InventoryException $exception) {
-            return ApiResponse::error($exception->getMessage(), $exception->httpStatus, [
-                'code' => $exception->errorCode,
-            ]);
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], $exception->httpStatus);
         }
 
-        return ApiResponse::success(['product' => ProductResource::make($product)]);
+        return response()->json([
+            'success' => true,
+            'product' => ContractResponse::product($product, $stock),
+        ]);
     }
 
     public function store(StoreProductRequest $request): JsonResponse
@@ -87,6 +91,7 @@ class ProductController extends Controller
                 $product->id,
                 (int) $request->input('initial_quantity'),
             );
+            $product->update(['stock' => (int) $request->input('initial_quantity')]);
             $product->available_quantity = (int) $request->input('initial_quantity');
         } catch (InventoryException $exception) {
             $product->delete();

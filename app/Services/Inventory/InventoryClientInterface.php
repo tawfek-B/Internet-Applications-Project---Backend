@@ -7,6 +7,12 @@ interface InventoryClientInterface
     public function getQuantity(int $productId): int;
 
     /**
+     * @param  list<int>  $productIds
+     * @return array<int, int>
+     */
+    public function getQuantities(array $productIds): array;
+
+    /**
      * @param  list<array{product_id: int, quantity: int}>  $items
      */
     public function reserve(string $reservationId, array $items): bool;

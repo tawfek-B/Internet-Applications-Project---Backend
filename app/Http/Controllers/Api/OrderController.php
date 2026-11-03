@@ -4,15 +4,21 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\UpdateTawfekOrderStatusRequest;
+use App\Http\Requests\Api\V1\StoreOrderRequest;
+use App\Http\Resources\Api\V1\OrderResource;
 use App\Models\Notification;
 use App\Models\Order;
 use App\Models\User;
-use App\Support\TawfekApiFormatter;
+use App\Services\Orders\CreateOrderService;
+use App\Support\ApiResponse;
+use App\Support\ContractResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class TawfekOrderController extends Controller
+class OrderController extends Controller
 {
+    public function __construct(private readonly CreateOrderService $createOrderService) {}
+
     public function index(Request $request): JsonResponse
     {
         $orders = Order::query()
@@ -20,7 +26,7 @@ class TawfekOrderController extends Controller
             ->where('user_id', $this->authenticatedUserId($request))
             ->latest()
             ->get()
-            ->map(fn (Order $order) => TawfekApiFormatter::orderSummary($order))
+            ->map(fn (Order $order) => ContractResponse::orderSummary($order))
             ->values()
             ->all();
 
@@ -42,8 +48,24 @@ class TawfekOrderController extends Controller
 
         return response()->json([
             'success' => true,
-            'order' => TawfekApiFormatter::orderSummary($order),
+            'order' => ContractResponse::orderSummary($order),
         ]);
+    }
+
+    public function store(StoreOrderRequest $request): JsonResponse
+    {
+        $this->authorize('create', Order::class);
+
+        $order = $this->createOrderService->create(
+            $request->user(),
+            $request->input('items'),
+        );
+
+        return ApiResponse::success(
+            ['order' => OrderResource::make($order)],
+            'Order created',
+            201,
+        );
     }
 
     public function updateStatus(UpdateTawfekOrderStatusRequest $request, int $orderId): JsonResponse

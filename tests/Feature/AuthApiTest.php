@@ -30,7 +30,7 @@ it('logs in with valid credentials', function () {
 
     $response->assertOk()
         ->assertJsonPath('success', true)
-        ->assertJsonStructure(['access_token']);
+        ->assertJsonStructure(['access_token', 'user' => ['name', 'email', 'is_admin']]);
 });
 
 it('rate limits repeated failed login attempts', function () {

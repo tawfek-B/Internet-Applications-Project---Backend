@@ -22,6 +22,17 @@ class GrpcInventoryClient implements InventoryClientInterface
         return (int) ($result['available'] ?? 0);
     }
 
+    public function getQuantities(array $productIds): array
+    {
+        $quantities = [];
+
+        foreach ($productIds as $productId) {
+            $quantities[(int) $productId] = $this->getQuantity((int) $productId);
+        }
+
+        return $quantities;
+    }
+
     public function reserve(string $reservationId, array $items): bool
     {
         $result = $this->run([

@@ -53,6 +53,9 @@ class CreateOrderService
                         'quantity' => $line['quantity'],
                         'unit_price' => $product->price,
                     ]);
+
+                    $available = $this->inventory->getQuantity($product->id);
+                    $product->update(['stock' => $available]);
                 }
 
                 Notification::query()->create([

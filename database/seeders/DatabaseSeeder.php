@@ -31,7 +31,9 @@ class DatabaseSeeder extends Seeder
 
         Product::factory(10)->create()->each(function (Product $product) use ($inventory): void {
             try {
-                $inventory->setQuantity($product->id, fake()->numberBetween(5, 50));
+                $quantity = fake()->numberBetween(5, 50);
+                $inventory->setQuantity($product->id, $quantity);
+                $product->update(['stock' => $quantity]);
             } catch (InventoryException $exception) {
                 Log::warning('Inventory seed skipped for product {id}: {message}', [
                     'id' => $product->id,

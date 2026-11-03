@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Inventory\InventoryException;
 use App\Services\Orders\CreateOrderService;
 use App\Services\Orders\SimpleCheckoutService;
-use App\Support\TawfekApiFormatter;
+use App\Support\ContractResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -49,7 +49,7 @@ class CheckoutController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Order placed successfully',
-            'order' => TawfekApiFormatter::checkoutOrder($order),
+            'order' => ContractResponse::checkoutOrder($order),
         ], 201);
     }
 
@@ -82,7 +82,7 @@ class CheckoutController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Order placed successfully',
-            'order' => TawfekApiFormatter::checkoutOrder($order),
+            'order' => ContractResponse::checkoutOrder($order),
         ], 201);
     }
 }

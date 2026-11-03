@@ -1,12 +1,13 @@
 <?php
 
-namespace App\Http\Controllers\Api\V1\Users;
+namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\LoginRequest;
 use App\Http\Requests\Api\V1\RegisterRequest;
 use App\Models\User;
 use App\Support\ApiResponse;
+use App\Support\ContractResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,20 +37,28 @@ class AuthController extends Controller
         $credentials = $request->only('email', 'password');
 
         if (! $token = auth('api')->attempt($credentials)) {
-            return ApiResponse::error('Invalid email or password', 401);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid email or password',
+            ], 401);
         }
 
-        return ApiResponse::success([
+        /** @var User $user */
+        $user = auth('api')->user();
+
+        return response()->json([
+            'success' => true,
             'access_token' => $token,
-            'token_type' => 'bearer',
-            'expires_in' => auth('api')->factory()->getTTL() * 60,
-            'user' => auth('api')->user(),
-        ], 'Logged in successfully');
+            'user' => ContractResponse::loginUser($user),
+        ]);
     }
 
     public function me(Request $request): JsonResponse
     {
-        return ApiResponse::success(['user' => $request->user()]);
+        return response()->json([
+            'success' => true,
+            'user' => ContractResponse::profileUser($request->user()),
+        ]);
     }
 
     public function logout(): JsonResponse

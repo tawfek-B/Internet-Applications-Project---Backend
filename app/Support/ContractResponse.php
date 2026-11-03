@@ -6,10 +6,77 @@ use App\Models\CartItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\User;
 use Illuminate\Support\Collection;
 
-class TawfekApiFormatter
+class ContractResponse
 {
+    /**
+     * @return array{
+     *     id: int,
+     *     name: string,
+     *     description: string,
+     *     price: float,
+     *     stock: int,
+     *     image_url: string|null
+     * }
+     */
+    public static function product(Product $product, ?int $stockFromInventory = null): array
+    {
+        return [
+            'id' => (int) $product->id,
+            'name' => (string) $product->name,
+            'description' => (string) $product->description,
+            'price' => (float) $product->price,
+            'stock' => $stockFromInventory ?? (int) $product->stock,
+            'image_url' => $product->image_url,
+        ];
+    }
+
+    /**
+     * @param  iterable<int, Product>  $products
+     * @param  array<int, int>  $stockByProductId
+     * @return list<array<string, mixed>>
+     */
+    public static function productList(iterable $products, array $stockByProductId = []): array
+    {
+        $items = [];
+
+        foreach ($products as $product) {
+            $items[] = self::product(
+                $product,
+                $stockByProductId[(int) $product->id] ?? null,
+            );
+        }
+
+        return $items;
+    }
+
+    /**
+     * @return array{name: string, email: string, is_admin: bool}
+     */
+    public static function loginUser(User $user): array
+    {
+        return [
+            'name' => (string) $user->name,
+            'email' => (string) $user->email,
+            'is_admin' => (bool) $user->is_admin,
+        ];
+    }
+
+    /**
+     * @return array{id: int, name: string, email: string, is_admin: bool}
+     */
+    public static function profileUser(User $user): array
+    {
+        return [
+            'id' => (int) $user->id,
+            'name' => (string) $user->name,
+            'email' => (string) $user->email,
+            'is_admin' => (bool) $user->is_admin,
+        ];
+    }
+
     /**
      * @return array{id: int, user_id: int, product_id: int, quantity: int}
      */
@@ -33,21 +100,6 @@ class TawfekApiFormatter
     }
 
     /**
-     * @return array{id: int, name: string, description: string, price: float|string, stock: int, image_url: string|null}
-     */
-    public static function product(Product $product): array
-    {
-        return [
-            'id' => (int) $product->id,
-            'name' => (string) $product->name,
-            'description' => (string) $product->description,
-            'price' => (float) $product->price,
-            'stock' => (int) $product->stock,
-            'image_url' => $product->image_url,
-        ];
-    }
-
-    /**
      * @return array{id: int, order_id: int, product_id: int, quantity: int}
      */
     public static function checkoutOrderItem(OrderItem $item): array
@@ -63,9 +115,9 @@ class TawfekApiFormatter
     /**
      * @return array{id: int, order_id: int, product_id: int, quantity: int, product: array<string, mixed>}
      */
-    public static function detailedOrderItem(OrderItem $item): array
+    public static function orderLineItem(OrderItem $item): array
     {
-        $payload = [
+        $line = [
             'id' => (int) $item->id,
             'order_id' => (int) $item->order_id,
             'product_id' => (int) $item->product_id,
@@ -73,10 +125,10 @@ class TawfekApiFormatter
         ];
 
         if ($item->relationLoaded('product') && $item->product !== null) {
-            $payload['product'] = self::product($item->product);
+            $line['product'] = self::product($item->product);
         }
 
-        return $payload;
+        return $line;
     }
 
     /**
@@ -100,7 +152,7 @@ class TawfekApiFormatter
             'total_price' => self::orderTotalPrice($order),
             'total_items' => self::orderTotalItems($order),
             'order_items' => $order->orderItems
-                ->map(fn (OrderItem $item) => self::detailedOrderItem($item))
+                ->map(fn (OrderItem $item) => self::orderLineItem($item))
                 ->values()
                 ->all(),
         ];
