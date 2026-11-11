@@ -1,4 +1,4 @@
-# Docker-only: Laravel + inventory + MySQL. API: http://127.0.0.1:8000
+# Docker-only: Laravel + inventory service, each with its own MySQL server. API: http://127.0.0.1:8000
 services:
     laravel.test:
         build:
@@ -64,16 +64,41 @@ services:
             INVENTORY_HTTP_BIND: '0.0.0.0'
             PROTO_PATH: /proto/inventory.proto
             INVENTORY_DB_DRIVER: mysql
-            INVENTORY_MYSQL_HOST: mysql
+            INVENTORY_MYSQL_HOST: inventory-mysql
             INVENTORY_MYSQL_PORT: '3306'
             INVENTORY_MYSQL_DATABASE: inventory
-            INVENTORY_MYSQL_USER: '${DB_USERNAME}'
-            INVENTORY_MYSQL_PASSWORD: '${DB_PASSWORD}'
+            INVENTORY_MYSQL_USER: '${INVENTORY_DB_USERNAME:-inventory}'
+            INVENTORY_MYSQL_PASSWORD: '${INVENTORY_DB_PASSWORD:-inventory}'
         networks:
             - sail
         depends_on:
-            mysql:
+            inventory-mysql:
                 condition: service_healthy
+    # Inventory service owns its own MySQL server (database per service):
+    # Laravel never connects here, it only talks to the inventory service over HTTP/gRPC.
+    inventory-mysql:
+        image: 'mysql:8.4'
+        ports:
+            - '${FORWARD_INVENTORY_DB_PORT:-3309}:3306'
+        environment:
+            MYSQL_ROOT_PASSWORD: '${INVENTORY_DB_ROOT_PASSWORD:-inventory_root}'
+            MYSQL_DATABASE: inventory
+            MYSQL_USER: '${INVENTORY_DB_USERNAME:-inventory}'
+            MYSQL_PASSWORD: '${INVENTORY_DB_PASSWORD:-inventory}'
+        volumes:
+            - 'inventory-mysql:/var/lib/mysql'
+        networks:
+            - sail
+        healthcheck:
+            test:
+                - CMD
+                - mysqladmin
+                - ping
+                - '-p${INVENTORY_DB_ROOT_PASSWORD:-inventory_root}'
+            retries: 10
+            timeout: 5s
+            interval: 5s
+            start_period: 30s
     mysql:
         image: 'mysql:8.4'
         ports:
@@ -91,7 +116,6 @@ services:
             - 'sail-mysql:/var/lib/mysql'
             - './vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
             - './docker/mysql/15-replication-user.sql:/docker-entrypoint-initdb.d/15-replication-user.sql'
-            - './docker/mysql/20-create-inventory-database.sql:/docker-entrypoint-initdb.d/20-create-inventory-database.sql'
         networks:
             - sail
         healthcheck:
@@ -153,4 +177,6 @@ volumes:
     sail-mysql:
         driver: local
     sail-mysql-read:
+        driver: local
+    inventory-mysql:
         driver: local
