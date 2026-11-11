@@ -1,45 +1,17 @@
 'use strict';
 
 const path = require('path');
-const fs = require('fs');
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
-const Database = require('better-sqlite3');
+const { createWarehouseStore } = require('./warehouse-store');
 
 const GRPC_PORT = process.env.GRPC_PORT || '50051';
 const PROTO_PATH =
   process.env.PROTO_PATH ||
   path.join(__dirname, '..', 'proto', 'inventory.proto');
-const DATA_DIR = path.join(__dirname, 'data');
-const DB_PATH = path.join(DATA_DIR, 'inventory.db');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS stock (
-    product_id INTEGER PRIMARY KEY,
-    available INTEGER NOT NULL DEFAULT 0 CHECK (available >= 0)
-  );
-
-  CREATE TABLE IF NOT EXISTS reservations (
-    id TEXT PRIMARY KEY,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS reservation_items (
-    reservation_id TEXT NOT NULL,
-    product_id INTEGER NOT NULL,
-    quantity INTEGER NOT NULL CHECK (quantity > 0),
-    PRIMARY KEY (reservation_id, product_id),
-    FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE
-  );
-`);
+/** @type {import('./warehouse-store').createWarehouseStore extends () => Promise<infer S> ? S : never} */
+let store;
 
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: true,
@@ -53,194 +25,103 @@ const inventoryProto = grpc.loadPackageDefinition(packageDefinition).inventory;
 
 function getQuantity(call, callback) {
   const productId = Number(call.request.product_id);
-  const row = db
-    .prepare('SELECT available FROM stock WHERE product_id = ?')
-    .get(productId);
-
-  callback(null, {
-    product_id: productId,
-    available: row ? row.available : 0,
-  });
+  store
+    .getQuantity(productId)
+    .then((result) => callback(null, result))
+    .catch((err) =>
+      callback({ code: grpc.status.INTERNAL, message: err.message || String(err) })
+    );
 }
 
-function reserve(call, callback) {
-  const reservationId = String(call.request.reservation_id || '').trim();
-  const items = call.request.items || [];
+function normalizeReserveItems(items) {
+  const reservationId = String(items.reservationId || '').trim();
+  const rawItems = items.items || [];
 
   if (!reservationId) {
-    return callback(null, {
-      success: false,
-      message: 'reservation_id is required',
-      reservation_id: '',
-    });
+    return {
+      error: {
+        success: false,
+        message: 'reservation_id is required',
+        reservation_id: '',
+      },
+    };
   }
 
-  if (!Array.isArray(items) || items.length === 0) {
-    return callback(null, {
-      success: false,
-      message: 'at least one item is required',
-      reservation_id: reservationId,
-    });
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    return {
+      error: {
+        success: false,
+        message: 'at least one item is required',
+        reservation_id: reservationId,
+      },
+    };
   }
 
   const normalized = [];
-  for (const item of items) {
+  for (const item of rawItems) {
     const productId = Number(item.product_id);
     const quantity = Number(item.quantity);
 
     if (!Number.isFinite(productId) || productId <= 0) {
-      return callback(null, {
-        success: false,
-        message: `invalid product_id: ${item.product_id}`,
-        reservation_id: reservationId,
-      });
+      return {
+        error: {
+          success: false,
+          message: `invalid product_id: ${item.product_id}`,
+          reservation_id: reservationId,
+        },
+      };
     }
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
-      return callback(null, {
-        success: false,
-        message: `invalid quantity for product_id ${productId}`,
-        reservation_id: reservationId,
-      });
+      return {
+        error: {
+          success: false,
+          message: `invalid quantity for product_id ${productId}`,
+          reservation_id: reservationId,
+        },
+      };
     }
 
     normalized.push({ product_id: productId, quantity });
   }
 
-  const getStock = db.prepare(
-    'SELECT available FROM stock WHERE product_id = ?'
-  );
-  const updateStock = db.prepare(
-    'UPDATE stock SET available = ? WHERE product_id = ?'
-  );
-  const insertReservation = db.prepare(
-    'INSERT INTO reservations (id) VALUES (?)'
-  );
-  const insertItem = db.prepare(`
-    INSERT INTO reservation_items (reservation_id, product_id, quantity)
-    VALUES (?, ?, ?)
-  `);
+  return { reservationId, normalized };
+}
 
-  try {
-    // BEGIN IMMEDIATE acquires a reserved lock immediately to avoid races.
-    db.exec('BEGIN IMMEDIATE');
+function reserve(call, callback) {
+  const reservationId = String(call.request.reservation_id || '').trim();
+  const parsed = normalizeReserveItems({
+    reservationId,
+    items: call.request.items || [],
+  });
 
-    const existing = db
-      .prepare('SELECT id FROM reservations WHERE id = ?')
-      .get(reservationId);
-
-    if (existing) {
-      db.exec('ROLLBACK');
-      return callback(null, {
-        success: false,
-        message: `reservation already exists: ${reservationId}`,
-        reservation_id: reservationId,
-      });
-    }
-
-    for (const item of normalized) {
-      const row = getStock.get(item.product_id);
-      const available = row ? row.available : 0;
-
-      if (available < item.quantity) {
-        db.exec('ROLLBACK');
-        return callback(null, {
-          success: false,
-          message: `insufficient stock for product_id ${item.product_id}: requested ${item.quantity}, available ${available}`,
-          reservation_id: reservationId,
-        });
-      }
-    }
-
-    insertReservation.run(reservationId);
-
-    for (const item of normalized) {
-      const row = getStock.get(item.product_id);
-      updateStock.run(row.available - item.quantity, item.product_id);
-      insertItem.run(reservationId, item.product_id, item.quantity);
-    }
-
-    db.exec('COMMIT');
-    callback(null, {
-      success: true,
-      message: 'reserved',
-      reservation_id: reservationId,
-    });
-  } catch (err) {
-    try {
-      db.exec('ROLLBACK');
-    } catch (_) {
-      // ignore rollback errors
-    }
-    callback({
-      code: grpc.status.INTERNAL,
-      message: err.message || String(err),
-    });
+  if (parsed.error) {
+    callback(null, parsed.error);
+    return;
   }
+
+  store
+    .reserve(parsed.reservationId, parsed.normalized)
+    .then((result) => callback(null, result))
+    .catch((err) =>
+      callback({ code: grpc.status.INTERNAL, message: err.message || String(err) })
+    );
 }
 
 function release(call, callback) {
   const reservationId = String(call.request.reservation_id || '').trim();
 
   if (!reservationId) {
-    return callback(null, {
-      success: false,
-      message: 'reservation_id is required',
-    });
+    callback(null, { success: false, message: 'reservation_id is required' });
+    return;
   }
 
-  try {
-    db.exec('BEGIN IMMEDIATE');
-
-    const reservation = db
-      .prepare('SELECT id FROM reservations WHERE id = ?')
-      .get(reservationId);
-
-    // Idempotent: already released or never existed.
-    if (!reservation) {
-      db.exec('COMMIT');
-      return callback(null, {
-        success: true,
-        message: 'already released or not found',
-      });
-    }
-
-    const items = db
-      .prepare(
-        'SELECT product_id, quantity FROM reservation_items WHERE reservation_id = ?'
-      )
-      .all(reservationId);
-
-    const restoreStock = db.prepare(`
-      INSERT INTO stock (product_id, available) VALUES (?, ?)
-      ON CONFLICT(product_id) DO UPDATE SET available = available + excluded.available
-    `);
-
-    for (const item of items) {
-      restoreStock.run(item.product_id, item.quantity);
-    }
-
-    db.prepare('DELETE FROM reservation_items WHERE reservation_id = ?').run(
-      reservationId
+  store
+    .release(reservationId)
+    .then((result) => callback(null, result))
+    .catch((err) =>
+      callback({ code: grpc.status.INTERNAL, message: err.message || String(err) })
     );
-    db.prepare('DELETE FROM reservations WHERE id = ?').run(reservationId);
-
-    db.exec('COMMIT');
-    callback(null, {
-      success: true,
-      message: 'released',
-    });
-  } catch (err) {
-    try {
-      db.exec('ROLLBACK');
-    } catch (_) {
-      // ignore
-    }
-    callback({
-      code: grpc.status.INTERNAL,
-      message: err.message || String(err),
-    });
-  }
 }
 
 function setQuantity(call, callback) {
@@ -248,35 +129,27 @@ function setQuantity(call, callback) {
   const quantity = Number(call.request.quantity);
 
   if (!Number.isFinite(productId) || productId <= 0) {
-    return callback({
+    callback({
       code: grpc.status.INVALID_ARGUMENT,
       message: 'product_id must be a positive integer',
     });
+    return;
   }
 
   if (!Number.isInteger(quantity) || quantity < 0) {
-    return callback({
+    callback({
       code: grpc.status.INVALID_ARGUMENT,
       message: 'quantity must be a non-negative integer',
     });
+    return;
   }
 
-  try {
-    db.prepare(`
-      INSERT INTO stock (product_id, available) VALUES (?, ?)
-      ON CONFLICT(product_id) DO UPDATE SET available = excluded.available
-    `).run(productId, quantity);
-
-    callback(null, {
-      success: true,
-      available: quantity,
-    });
-  } catch (err) {
-    callback({
-      code: grpc.status.INTERNAL,
-      message: err.message || String(err),
-    });
-  }
+  store
+    .setQuantity(productId, quantity)
+    .then((result) => callback(null, result))
+    .catch((err) =>
+      callback({ code: grpc.status.INTERNAL, message: err.message || String(err) })
+    );
 }
 
 function invokeHandler(handler, request) {
@@ -365,8 +238,7 @@ function startHttpBridge() {
     } catch (err) {
       const message = err.details || err.message || String(err);
       const code = typeof err.code === 'number' ? err.code : null;
-      const status =
-        code === grpc.status.INVALID_ARGUMENT ? 400 : 503;
+      const status = code === grpc.status.INVALID_ARGUMENT ? 400 : 503;
       res.statusCode = status;
       res.end(JSON.stringify({ error: true, message }));
     }
@@ -391,7 +263,9 @@ function readRequestBody(req) {
   });
 }
 
-function main() {
+async function main() {
+  store = await createWarehouseStore();
+
   const server = new grpc.Server();
   server.addService(inventoryProto.InventoryService.service, {
     GetQuantity: getQuantity,
@@ -411,7 +285,7 @@ function main() {
       }
 
       console.log(
-        `Inventory gRPC service listening on ${bindAddress} (bound port ${port}), db=${DB_PATH}`
+        `Inventory gRPC service listening on ${bindAddress} (bound port ${port}), warehouse=${store.label}`
       );
     }
   );
@@ -419,4 +293,7 @@ function main() {
   startHttpBridge();
 }
 
-main();
+main().catch((err) => {
+  console.error('Inventory service failed to start:', err);
+  process.exit(1);
+});

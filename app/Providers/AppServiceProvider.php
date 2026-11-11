@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\Product;
+use App\Observers\ProductObserver;
 use App\Services\Inventory\FakeInventoryClient;
 use App\Services\Inventory\GrpcInventoryClient;
 use App\Services\Inventory\HttpInventoryClient;
@@ -55,6 +57,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Product::observe(ProductObserver::class);
+
         RateLimiter::for('login', function (Request $request) {
             $email = (string) $request->input('email');
 

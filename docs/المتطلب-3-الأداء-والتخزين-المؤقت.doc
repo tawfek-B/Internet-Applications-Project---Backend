@@ -1,0 +1,240 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8">
+<meta name="ProgId" content="Word.Document">
+<meta name="Generator" content="WebProject Documentation">
+<title>المتطلب 3 — الأداء والتخزين المؤقت (Performance &amp; Caching)</title>
+<!--[if gte mso 9]>
+<xml>
+<w:WordDocument>
+<w:View>Print</w:View>
+<w:Zoom>100</w:Zoom>
+<w:DoNotOptimizeForBrowser/>
+</w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+@page { size: A4; margin: 2.5cm; }
+body {
+  font-family: "Arial", "Traditional Arabic", "Segoe UI", sans-serif;
+  font-size: 12pt;
+  line-height: 1.6;
+  direction: rtl;
+  text-align: right;
+  color: #1a1a1a;
+}
+h1 { font-size: 22pt; color: #1e3a5f; border-bottom: 2px solid #1e3a5f; padding-bottom: 8px; }
+h2 { font-size: 16pt; color: #2c5282; margin-top: 24px; }
+h3 { font-size: 13pt; color: #2d3748; margin-top: 16px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 0; padding-right: 24px; }
+li { margin: 4px 0; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 11pt; }
+th, td { border: 1px solid #cbd5e0; padding: 8px 10px; text-align: right; vertical-align: top; }
+th { background: #edf2f7; font-weight: bold; }
+code, .path { font-family: Consolas, "Courier New", monospace; font-size: 10pt; background: #f7fafc; padding: 2px 4px; direction: ltr; unicode-bidi: embed; }
+.tip { background: #ebf8ff; border-right: 4px solid #3182ce; padding: 10px 14px; margin: 12px 0; }
+.cover { text-align: center; margin-bottom: 40px; }
+.cover .sub { font-size: 14pt; color: #4a5568; }
+hr { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+<h1 style="border: none;">مشروع الويب — المتطلب الثالث</h1>
+<p class="sub"><strong>الأداء والتخزين المؤقت (Performance &amp; Caching)</strong></p>
+<p class="sub">دليل الملفات، المنطق، وأسباب التصميم (للمناقشة والتسليم)</p>
+<p class="sub">مسار المشروع: <code>c:\xampp\htdocs\WebProject</code></p>
+</div>
+
+<hr>
+
+<h2>1. هدف المتطلب (ملخص)</h2>
+<p>المطلوب جعل النظام أسرع مع إثبات رقمي للتحسين، عبر:</p>
+<ol>
+<li>قاعدة بيانات كبيرة وتحليل الاستعلامات البطيئة باستخدام <strong>EXPLAIN</strong> وتحسينها.</li>
+<li>معالجة مشكلة <strong>N+1</strong> في الاستعلامات.</li>
+<li>تطبيق <strong>Read Replica</strong> مع ضمان أن المستخدم يرى ما أنشأه أو عدّله فوراً.</li>
+<li><strong>Redis</strong> لتخزين البيانات الأكثر قراءة، مع سياسة انتهاء (TTL) وإبطال عند التعديل.</li>
+<li><strong>ETag</strong> ورد <strong>304 Not Modified</strong> عندما لم يتغير المحتوى.</li>
+<li>اختبار حمل بـ <strong>k6</strong> مع قياس <strong>p50, p95, p99</strong> قبل وبعد التحسينات.</li>
+</ol>
+
+<h2>2. خريطة سريعة — أين يوجد كل شيء؟</h2>
+<table>
+<tr><th>نوع العمل</th><th>المسار داخل المشروع</th></tr>
+<tr><td>منطق التطبيق (PHP)</td><td><code>app/</code></td></tr>
+<tr><td>إعدادات الكاش والداتابيز</td><td><code>config/catalog.php</code>, <code>config/database.php</code>, <code>.env.docker</code></td></tr>
+<tr><td>Docker (Redis + MySQL + نسخة قراءة)</td><td><code>compose.yaml</code>, <code>docker/mysql/</code></td></tr>
+<tr><td>بيانات ضخمة + EXPLAIN</td><td><code>app/Console/Commands/Performance*.php</code></td></tr>
+<tr><td>اختبار الحمل</td><td><code>scripts/load/k6-products.js</code></td></tr>
+<tr><td>اختبارات Pest</td><td><code>tests/Feature/ProductCatalogHttpTest.php</code></td></tr>
+<tr><td>واجهة API للمنتجات</td><td><code>app/Http/Controllers/Api/ProductController.php</code>, <code>routes/api.php</code></td></tr>
+</table>
+
+<div class="tip">
+<strong>ملف واحد للمناقشة:</strong> ابدئي من <code>ProductController.php</code> — يجمع الكاش، ETag، واستدعاء المخزون (inventory).
+</div>
+
+<hr>
+
+<h2>3. تفصيل كل بند — الملفات، المنطق، والسبب</h2>
+
+<h3>3.1 قاعدة بيانات كبيرة + EXPLAIN وتحسين الاستعلامات</h3>
+<p><strong>الملفات:</strong></p>
+<ul>
+<li><code>database/migrations/2026_11_11_100000_add_performance_indexes_to_catalog_tables.php</code> — فهارس على products, orders, order_items, cart_items.</li>
+<li><code>database/migrations/2026_11_11_110000_add_orders_user_id_id_index.php</code> — فهرس إضافي (user_id, id) للطلبات.</li>
+<li><code>app/Console/Commands/PerformanceSeedBulkCommand.php</code> — أمر: <code>performance:seed-bulk</code>.</li>
+<li><code>app/Console/Commands/PerformanceExplainOrdersCommand.php</code> — أمر: <code>performance:explain-orders</code>.</li>
+</ul>
+<p><strong>المنطق:</strong></p>
+<ul>
+<li>الأمر <code>performance:seed-bulk</code> يُدخل آلاف المنتجات ومئات آلاف الطلبات على دفعات (batch insert) لمحاكاة حمل حقيقي.</li>
+<li>الفهارس تُسرّع التصفية والترتيب الشائع (مثلاً طلبات مستخدم، منتجات حسب category).</li>
+<li>الأمر <code>performance:explain-orders</code> يشغّل <code>EXPLAIN</code> على استعلام قائمة طلبات (مع ربط order_items) ويعرض خطة التنفيذ (type, key, rows).</li>
+</ul>
+<p><strong>لماذا هكذا؟</strong> المتطلب يطلب دليلاً عملياً: حجم بيانات كبير + تحليل خطة MySQL قبل/بعد الفهارس، وليس تحسيناً نظرياً على جدول فارغ.</p>
+<p><strong>أوامر التشغيل (Docker):</strong></p>
+<p><code>.\scripts\artisan-docker.cmd performance:seed-bulk --products=5000 --orders=100000</code><br>
+<code>.\scripts\artisan-docker.cmd performance:explain-orders</code></p>
+
+<h3>3.2 حل مشكلة N+1</h3>
+<p><strong>الملف:</strong> <code>app/Http/Controllers/Api/OrderController.php</code></p>
+<p><strong>المنطق:</strong> في <code>index</code> و<code>show</code> نستخدم:</p>
+<ul>
+<li><code>->with('orderItems.product')</code> في القائمة.</li>
+<li><code>->load('orderItems.product')</code> في عرض طلب واحد.</li>
+</ul>
+<p>بدون ذلك Laravel يُنفّذ استعلاماً لكل عنصر طلب ولكل منتج (1 + N + N). مع Eager Loading يصبح عدد الاستعلامات محدوداً (غالباً 3).</p>
+<p><strong>لماذا هكذا؟</strong> هذا الحل الرسمي في Laravel/Eloquent ومباشر في الكود المراجع من قبل الدكتورة.</p>
+
+<h3>3.3 Read Replica + رؤية التعديل فوراً (sticky)</h3>
+<p><strong>الملفات:</strong></p>
+<ul>
+<li><code>config/database.php</code> — أقسام <code>read</code>, <code>write</code>, <code>sticky</code> على اتصال mysql.</li>
+<li><code>.env.docker</code> — <code>DB_WRITE_HOST</code>, <code>DB_READ_HOST</code>, <code>DB_STICKY</code>.</li>
+<li><code>compose.yaml</code> — خدمات <code>mysql</code> (primary مع binlog) و<code>mysql-read</code>.</li>
+<li><code>docker/mysql/15-replication-user.sql</code> — مستخدم replication.</li>
+<li><code>docker/mysql/README-replica.txt</code> — خطوات تفعيل النسخ يدوياً.</li>
+<li><code>app/Console/Commands/BootstrapMysqlReadReplicaCommand.php</code> — <code>db:bootstrap-read-replica</code>.</li>
+</ul>
+<p><strong>المنطق:</strong></p>
+<ul>
+<li>الكتابة على <code>DB_WRITE_HOST</code> (حاوية mysql).</li>
+<li>القراءة العادية على <code>DB_READ_HOST</code> (يفترض mysql-read بعد الإعداد).</li>
+<li><code>sticky = true</code>: في نفس طلب HTTP، بعد أي INSERT/UPDATE، تُقرأ البيانات من الـ writer حتى لا يرى المستخدم بيانات قديمة من replica متأخرة.</li>
+</ul>
+<p><strong>لماذا هكذا؟</strong> فصل القراءة يخفف الحمل على الـ primary؛ والـ sticky يلبي شرط «المستخدم يرى ما أنشأه مباشرة» رغم تأخر النسخ.</p>
+<p><strong>ملاحظة تشغيل:</strong> في <code>.env.docker</code> غالباً <code>DB_READ_HOST=mysql</code> حتى يعمل المشروع قبل إكمال replication. عند الجاهزية تُغيّر إلى <code>mysql-read</code> حسب README-replica.</p>
+
+<h3>3.4 Server-Side Caching — Redis + TTL + إبطال عند التعديل</h3>
+<p><strong>الملفات:</strong></p>
+<ul>
+<li><code>compose.yaml</code> — خدمة <code>redis</code> و<code>CACHE_STORE=redis</code> لـ laravel.test.</li>
+<li><code>config/catalog.php</code> — <code>CATALOG_CACHE_ENABLED</code>, <code>CATALOG_CACHE_TTL</code>.</li>
+<li><code>app/Services/Catalog/ProductCatalogCache.php</code> — طبقة الكاش.</li>
+<li><code>app/Observers/ProductObserver.php</code> — إبطال عند حفظ/حذف منتج.</li>
+<li><code>app/Providers/AppServiceProvider.php</code> — <code>Product::observe(ProductObserver::class)</code>.</li>
+<li><code>app/Http/Controllers/Api/ProductController.php</code> — استدعاء الكاش في index و show.</li>
+</ul>
+<p><strong>المنطق (مهم للمناقشة):</strong></p>
+<ol>
+<li>مفتاح عام للإصدار: <code>catalog:products:version</code> في Redis.</li>
+<li>مفاتيح الصفحات مثل: <code>catalog:products:v3:page:1:per:15:cat:_all</code>.</li>
+<li>عند تعديل/حذف منتج: <code>bumpVersion()</code> يزيد الرقم — المفاتيح القديمة لا تُستخدم (invalidation بالإصدار).</li>
+<li>TTL من الإعدادات (افتراضي 300 ثانية) عبر <code>Cache::put(..., ttl)</code>.</li>
+<li>الكاش يخزّن نتيجة MySQL للمنتجات؛ كميات المخزون تُجلب من خدمة inventory في كل طلب لأنها مصدر خارجي.</li>
+</ol>
+<p><strong>لماذا الإصدار (versioning)؟</strong> أبسط من مسح آلاف المفاتيح يدوياً عند كل تحديث، وأضمن من نسيان مفتاح.</p>
+
+<h3>3.5 HTTP Caching — ETag و 304 Not Modified</h3>
+<p><strong>الملفات:</strong></p>
+<ul>
+<li><code>app/Support/CatalogHttp.php</code> — دالة <code>jsonWithEtag()</code>.</li>
+<li><code>app/Http/Controllers/Api/ProductController.php</code> — يولّد ETag ويربط الاستجابة.</li>
+<li><code>tests/Feature/ProductCatalogHttpTest.php</code> — اختبار 304 والتغيير بعد PATCH.</li>
+<li><code>app/Http/Requests/Api/V1/UpdateProductRequest.php</code> + مسار <code>PATCH /api/v1/products/{product}</code> في <code>routes/api.php</code> (admin).</li>
+</ul>
+<p><strong>المنطق:</strong></p>
+<ul>
+<li>الخادم يُرجع هيدر <code>ETag</code> يمثل بصمة المحتوى (مع updated_at للمنتجات).</li>
+<li>إذا أرسل العميل <code>If-None-Match</code> بنفس القيمة → <strong>304</strong> بدون جسم JSON.</li>
+<li>بعد تعديل منتج تتغير البصمة والإصدار → لا يبقى 304 بالـ ETag القديم؛ يُرجع 200 بمحتوى جديد.</li>
+</ul>
+<p><strong>الفرق عن Redis (سؤال شائع):</strong> Redis يقلل استعلامات MySQL على السيرفر؛ ETag يقلل نقل البيانات على الشبكة بين العميل والسيرفر.</p>
+
+<h3>3.6 Load Testing — k6 (p50, p95, p99)</h3>
+<p><strong>الملف:</strong> <code>scripts/load/k6-products.js</code></p>
+<p><strong>المنطق:</strong></p>
+<ul>
+<li>يطلب <code>GET /api/v1/products</code> بعدد مستخدمين افتراضيين (VUS) ولمدة (DURATION).</li>
+<li>يجرب أيضاً <code>If-None-Match</code> لمسار 304.</li>
+<li>يكتب ملخصاً يتضمن النسب المئوية إلى <code>scripts/load/k6-summary.txt</code>.</li>
+</ul>
+<p><strong>الإثبات المطلوب:</strong> تشغيل مرة <strong>قبل</strong> التحسين (مثلاً تعطيل الكاش) ومرة <strong>بعد</strong> (Redis + كاش مفعّل)، ومقارنة p50/p95/p99.</p>
+<p><strong>أمر:</strong> <code>k6 run scripts/load/k6-products.js</code> (BASE_URL افتراضي: http://127.0.0.1:8000)</p>
+
+<hr>
+
+<h2>4. تسلسل طلب قائمة المنتجات (GET /api/v1/products)</h2>
+<ol>
+<li>العميل يرسل GET مع معاملات page / per_page / category.</li>
+<li>إن كان الكاش مفعّلاً: <code>ProductCatalogCache::rememberProductPage()</code> — إن وُجدت قيمة في Redis تُستخدم؛ وإلا استعلام MySQL ثم تخزين مع ETag داخلي.</li>
+<li>جلب كميات المخزون دفعة واحدة من inventory (<code>getQuantities</code>).</li>
+<li><code>CatalogHttp::jsonWithEtag()</code> — مقارنة If-None-Match → 304 أو 200 + JSON + هيدر ETag.</li>
+</ol>
+
+<hr>
+
+<h2>5. جدول أوامر Artisan و Docker للعرض</h2>
+<table>
+<tr><th>الأمر / الإجراء</th><th>الغرض</th></tr>
+<tr><td><code>docker compose up -d --build</code></td><td>تشغيل Laravel + MySQL + Redis + inventory</td></tr>
+<tr><td><code>.\scripts\artisan-docker.cmd migrate --force</code></td><td>تطبيق الفهارس والجداول</td></tr>
+<tr><td><code>performance:seed-bulk</code></td><td>بيانات ضخمة للأداء</td></tr>
+<tr><td><code>performance:explain-orders</code></td><td>عرض EXPLAIN</td></tr>
+<tr><td><code>db:bootstrap-read-replica</code></td><td>مستخدم replication على primary</td></tr>
+<tr><td><code>k6 run scripts/load/k6-products.js</code></td><td>اختبار الحمل والنسب المئوية</td></tr>
+<tr><td><code>php artisan test tests/Feature/ProductCatalogHttpTest.php</code></td><td>إثبات ETag والكاش (داخل Docker)</td></tr>
+</table>
+
+<hr>
+
+<h2>6. نقاط جاهزة للقول أمام الدكتورة (فقرات قصيرة)</h2>
+<p><strong>عن قاعدة البيانات:</strong> «عملنا migration للفهارس وأمر seed-bulk لملء مئات آلاف الطلبات، وexplain-orders يطبع خطة MySQL حتى نبرهن أن الفهارس تُستخدم.»</p>
+<p><strong>عن N+1:</strong> «في OrderController استخدمنا with('orderItems.product') حتى لا يتكرر استعلام لكل منتج.»</p>
+<p><strong>عن Replica:</strong> «في database.php فصلنا read و write مع sticky=true حتى القراءة تذهب للنسخة والكتابة للأساسي، والمستخدم يرى تعديله في نفس الطلب.»</p>
+<p><strong>عن Redis:</strong> «كاش المنتجات versioned في ProductCatalogCache؛ أي update على Product يرفع الإصدار عبر Observer فيُبطل الكاش القديم مع TTL 300 ثانية.»</p>
+<p><strong>عن ETag:</strong> «CatalogHttp يقارن If-None-Match ويرجع 304 إذا لم يتغير المحتوى؛ بعد PATCH المنتج يتغير ETag ويظهر الاسم الجديد فوراً.»</p>
+<p><strong>عن k6:</strong> «سكربت k6-products.js يقيس زمن الاستجابة ويطبع p50/p95/p99 قبل وبعد تفعيل الكاش و Redis.»</p>
+
+<hr>
+
+<h2>7. قائمة الملفات المرجعية (للطباعة أو المراجعة)</h2>
+<table>
+<tr><th>#</th><th>المسار</th><th>الدور</th></tr>
+<tr><td>1</td><td><code>app/Http/Controllers/Api/ProductController.php</code></td><td>كاش + ETag + inventory</td></tr>
+<tr><td>2</td><td><code>app/Services/Catalog/ProductCatalogCache.php</code></td><td>Redis versioning + TTL</td></tr>
+<tr><td>3</td><td><code>app/Observers/ProductObserver.php</code></td><td>إبطال الكاش</td></tr>
+<tr><td>4</td><td><code>app/Support/CatalogHttp.php</code></td><td>ETag / 304</td></tr>
+<tr><td>5</td><td><code>config/database.php</code></td><td>read/write/sticky</td></tr>
+<tr><td>6</td><td><code>config/catalog.php</code></td><td>إعدادات كاش الكتالوج</td></tr>
+<tr><td>7</td><td><code>compose.yaml</code></td><td>redis, mysql-read</td></tr>
+<tr><td>8</td><td><code>app/Console/Commands/PerformanceSeedBulkCommand.php</code></td><td>بيانات ضخمة</td></tr>
+<tr><td>9</td><td><code>app/Console/Commands/PerformanceExplainOrdersCommand.php</code></td><td>EXPLAIN</td></tr>
+<tr><td>10</td><td><code>scripts/load/k6-products.js</code></td><td>اختبار الحمل</td></tr>
+<tr><td>11</td><td><code>tests/Feature/ProductCatalogHttpTest.php</code></td><td>اختبارات ETag</td></tr>
+<tr><td>12</td><td><code>app/Http/Controllers/Api/OrderController.php</code></td><td>N+1</td></tr>
+</table>
+
+<p style="margin-top:32px; font-size:10pt; color:#718096; text-align:center;">
+— نهاية المستند —<br>
+لحفظ بصيغة docx رسمية: افتحي الملف في Microsoft Word ثم File → Save As → Word Document (*.docx)
+</p>
+
+</body>
+</html>

@@ -10,6 +10,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY server.js ./
+COPY warehouse-store.js ./
 COPY client.js ./
 
 ENV GRPC_PORT=50051

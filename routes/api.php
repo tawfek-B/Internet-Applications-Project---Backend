@@ -54,5 +54,6 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
 
         Route::post('products', [ProductController::class, 'store'])->middleware('admin');
+        Route::patch('products/{product}', [ProductController::class, 'update'])->middleware('admin');
     });
 });
