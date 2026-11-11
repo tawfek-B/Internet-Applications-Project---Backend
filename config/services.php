@@ -37,11 +37,11 @@ return [
 
     'inventory' => [
         'driver' => env('INVENTORY_DRIVER', 'http'),
-        'host' => env('INVENTORY_GRPC_HOST', '127.0.0.1:50051'),
-        'http_url' => env('INVENTORY_HTTP_URL', 'http://127.0.0.1:50052'),
+        'http_url' => env('INVENTORY_HTTP_URL', 'http://inventory:50052'),
+        'host' => env('INVENTORY_GRPC_HOST', 'inventory:50051'),
+        'timeout_seconds' => (int) env('INVENTORY_TIMEOUT', 5),
         'node_binary' => env('INVENTORY_NODE_BINARY', 'node'),
         'client_script' => env('INVENTORY_CLIENT_SCRIPT', base_path('inventory-service/client.js')),
-        'timeout_seconds' => env('INVENTORY_TIMEOUT_SECONDS', 3),
     ],
 
 ];

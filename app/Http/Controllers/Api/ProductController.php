@@ -6,71 +6,105 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreProductRequest;
 use App\Http\Resources\Api\V1\ProductResource;
 use App\Models\Product;
+use App\Services\Cache\ProductCacheService;
 use App\Services\Inventory\InventoryClientInterface;
 use App\Services\Inventory\InventoryException;
 use App\Support\ApiResponse;
 use App\Support\ContractResponse;
+use App\Support\ForcesPrimaryRead;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
-    public function __construct(private readonly InventoryClientInterface $inventory) {}
+    use ForcesPrimaryRead;
+
+    public function __construct(
+        private readonly InventoryClientInterface $inventory,
+        private readonly ProductCacheService $productCache,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
-        $query = Product::query()->latest();
+        $category = $request->filled('category')
+            ? $request->string('category')->toString()
+            : '';
+        $perPage = min(max((int) $request->input('per_page', 15), 1), 100);
+        $page = max((int) $request->input('page', 1), 1);
 
-        if ($request->filled('category')) {
-            $query->where('category', $request->string('category')->toString());
-        }
+        $payload = $this->productCache->rememberList($category, $page, $perPage, function () use ($request, $category, $perPage) {
+            $query = Product::query()->latest();
 
-        $products = $query->paginate(
-            perPage: min(max((int) $request->input('per_page', 15), 1), 100),
-        );
+            if ($category !== '') {
+                $query->where('category', $category);
+            }
 
-        $productIds = collect($products->items())
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->values()
-            ->all();
+            $products = $query->paginate(perPage: $perPage);
 
-        try {
+            $productIds = collect($products->items())
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+
             $stockByProductId = $this->inventory->getQuantities($productIds);
-        } catch (InventoryException $exception) {
-            return response()->json([
-                'success' => false,
-                'message' => $exception->getMessage(),
-            ], $exception->httpStatus);
+
+            return [
+                'products' => ContractResponse::productList($products->items(), $stockByProductId),
+                'meta' => [
+                    'current_page' => $products->currentPage(),
+                    'last_page' => $products->lastPage(),
+                    'per_page' => $products->perPage(),
+                    'total' => $products->total(),
+                ],
+            ];
+        });
+
+        $etag = $this->makeEtag($payload);
+
+        if ($request->header('If-None-Match') === $etag) {
+            return response()->json(null, 304)
+                ->header('ETag', $etag)
+                ->header('Cache-Control', 'private, must-revalidate');
         }
 
-        return response()->json([
-            'products' => ContractResponse::productList($products->items(), $stockByProductId),
-        ]);
+        return response()->json($payload)
+            ->header('ETag', $etag)
+            ->header('Cache-Control', 'private, must-revalidate');
     }
 
-    public function show(Product $product): JsonResponse
+    public function show(Request $request, Product $product): JsonResponse
     {
-        try {
-            $stock = $this->inventory->getQuantity($product->id);
-        } catch (InventoryException $exception) {
-            return response()->json([
-                'success' => false,
-                'message' => $exception->getMessage(),
-            ], $exception->httpStatus);
+        $payload = $this->productCache->rememberProduct($product->id, function () use ($product) {
+            try {
+                $stock = $this->inventory->getQuantity($product->id);
+            } catch (InventoryException $exception) {
+                throw $exception;
+            }
+
+            return [
+                'success' => true,
+                'product' => ContractResponse::product($product, $stock),
+            ];
+        });
+
+        $etag = $this->makeEtag($payload);
+
+        if ($request->header('If-None-Match') === $etag) {
+            return response()->json(null, 304)
+                ->header('ETag', $etag)
+                ->header('Cache-Control', 'private, must-revalidate');
         }
 
-        return response()->json([
-            'success' => true,
-            'product' => ContractResponse::product($product, $stock),
-        ]);
+        return response()->json($payload)
+            ->header('ETag', $etag)
+            ->header('Cache-Control', 'private, must-revalidate');
     }
 
     public function store(StoreProductRequest $request): JsonResponse
     {
         $imagePath = null;
-
         if ($request->hasFile('image')) {
             $imagePath = Storage::disk('public')->url(
                 $request->file('image')->store('products', 'public'),
@@ -95,16 +129,23 @@ class ProductController extends Controller
             $product->available_quantity = (int) $request->input('initial_quantity');
         } catch (InventoryException $exception) {
             $product->delete();
-
             return ApiResponse::error($exception->getMessage(), $exception->httpStatus, [
                 'code' => $exception->errorCode,
             ]);
         }
+        
+        $this->productCache->forgetAll();
+        $this->forcePrimaryConnection();
 
         return ApiResponse::success(
             ['product' => ProductResource::make($product)],
             'Product created',
             201,
         );
+    }
+
+    private function makeEtag(array $payload): string
+    {
+        return '"' . md5(json_encode($payload)) . '"';
     }
 }

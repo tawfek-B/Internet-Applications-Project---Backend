@@ -1,0 +1,9 @@
+workspace:
+  id: 575209c3-3f49-491f-8d8b-1c9090dbba0f
+
+localResources:
+  collections:
+    - ../docs/postman_collection.json
+  specs:
+    - ../docs/openapi.yaml
+    - ../proto/inventory.proto

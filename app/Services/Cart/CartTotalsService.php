@@ -12,15 +12,15 @@ class CartTotalsService
      */
     public function totalsFor(User $user): array
     {
-        $totalItems = (int) $user->cart()->sum('quantity');
-
-        $totalPrice = (float) $user->cart()
+        $row = $user->cart()
             ->join('products', 'cart_items.product_id', '=', 'products.id')
-            ->sum(DB::raw('cart_items.quantity * products.price'));
+            ->selectRaw('COALESCE(SUM(cart_items.quantity), 0) as total_items')
+            ->selectRaw('COALESCE(SUM(cart_items.quantity * products.price), 0) as total_price')
+            ->first();
 
         return [
-            'totalItems' => $totalItems,
-            'totalPrice' => $totalPrice,
+            'totalItems' => (int) ($row->total_items ?? 0),
+            'totalPrice' => (float) ($row->total_price ?? 0),
         ];
     }
 }
