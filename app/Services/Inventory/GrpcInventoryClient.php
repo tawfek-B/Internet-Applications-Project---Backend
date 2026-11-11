@@ -24,8 +24,11 @@ class GrpcInventoryClient implements InventoryClientInterface
 
     public function getQuantities(array $productIds): array
     {
-        $quantities = [];
+        if ($productIds === []) {
+            return [];
+        }
 
+        $quantities = [];
         foreach ($productIds as $productId) {
             $quantities[(int) $productId] = $this->getQuantity((int) $productId);
         }
