@@ -61,3 +61,17 @@ it('caches product list pages in redis or array store', function () {
 
     expect(Cache::has("catalog:products:v{$version}:page:1:per:2:cat:_all"))->toBeTrue();
 });
+
+it('returns a new etag when only the stock changes', function () {
+    $product = Product::factory()->create();
+    seedInventory($product->id, 10);
+
+    $etag = (string) $this->getJson("/api/v1/products/{$product->id}")->headers->get('ETag');
+
+    seedInventory($product->id, 3);
+
+    $this->getJson("/api/v1/products/{$product->id}", [
+        'If-None-Match' => $etag,
+    ])->assertOk()
+        ->assertJsonPath('product.stock', 3);
+});

@@ -28,7 +28,6 @@ class ProductController extends Controller
 
         if ($cached !== null) {
             $products = $cached['paginator'];
-            $etag = $cached['etag'];
         } else {
             $query = Product::query()->select([
                 'id',
@@ -49,17 +48,6 @@ class ProductController extends Controller
             $products = $query->paginate(
                 perPage: min(max((int) $request->input('per_page', 15), 1), 100),
             );
-
-            $etag = ProductCatalogCache::hashMaterial([
-                'list',
-                $products->currentPage(),
-                $products->perPage(),
-                $request->filled('category') ? $request->string('category')->toString() : '_all',
-                $products->total(),
-                collect($products->items())
-                    ->map(fn (Product $product) => $product->id.'@'.($product->updated_at?->timestamp ?? 0))
-                    ->implode(','),
-            ]);
         }
 
         $productIds = collect($products->items())
@@ -77,7 +65,7 @@ class ProductController extends Controller
             ], $exception->httpStatus);
         }
 
-        return CatalogHttp::jsonWithEtag($request, $etag, [
+        return CatalogHttp::jsonWithEtag($request, [
             'products' => ContractResponse::productList($products->items(), $stockByProductId),
         ]);
     }
@@ -88,7 +76,6 @@ class ProductController extends Controller
 
         if ($cached !== null) {
             $product = $cached['product'];
-            $etag = $cached['etag'];
         } else {
             $product = Product::query()
                 ->select([
@@ -104,12 +91,6 @@ class ProductController extends Controller
                 ])
                 ->whereKey($product->id)
                 ->firstOrFail();
-
-            $etag = ProductCatalogCache::hashMaterial([
-                'show',
-                $product->id,
-                $product->updated_at?->timestamp ?? 0,
-            ]);
         }
 
         try {
@@ -126,7 +107,7 @@ class ProductController extends Controller
             'product' => ContractResponse::product($product, $stock),
         ];
 
-        return CatalogHttp::jsonWithEtag($request, $etag, $payload);
+        return CatalogHttp::jsonWithEtag($request, $payload);
     }
 
     public function store(StoreProductRequest $request): JsonResponse

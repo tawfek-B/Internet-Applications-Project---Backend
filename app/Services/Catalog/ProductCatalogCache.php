@@ -29,7 +29,7 @@ class ProductCatalogCache
     }
 
     /**
-     * @return array{paginator: LengthAwarePaginator, etag: string}|null
+     * @return array{paginator: LengthAwarePaginator}|null
      */
     public static function rememberProductPage(Request $request): ?array
     {
@@ -54,10 +54,9 @@ class ProductCatalogCache
         /** @var array<string, mixed>|null $cached */
         $cached = Cache::get($key);
 
-        if (is_array($cached) && isset($cached['items'], $cached['etag'])) {
+        if (is_array($cached) && isset($cached['items'])) {
             return [
                 'paginator' => self::paginatorFromAttributes($cached),
-                'etag' => (string) $cached['etag'],
             ];
         }
 
@@ -79,16 +78,6 @@ class ProductCatalogCache
 
         $paginator = $query->paginate(perPage: $perPage, page: $page);
 
-        $etag = self::hashMaterial([
-            'list',
-            $page,
-            $perPage,
-            $category,
-            $paginator->total(),
-            $paginator->currentPage(),
-            self::fingerprintProducts($paginator->items()),
-        ]);
-
         $payload = [
             'items' => array_map(
                 fn (Product $product): array => $product->getAttributes(),
@@ -97,19 +86,17 @@ class ProductCatalogCache
             'total' => $paginator->total(),
             'per_page' => $paginator->perPage(),
             'current_page' => $paginator->currentPage(),
-            'etag' => $etag,
         ];
 
         Cache::put($key, $payload, self::ttlSeconds());
 
         return [
             'paginator' => $paginator,
-            'etag' => $etag,
         ];
     }
 
     /**
-     * @return array{product: Product, etag: string}|null
+     * @return array{product: Product}|null
      */
     public static function rememberProduct(Product $product): ?array
     {
@@ -122,10 +109,9 @@ class ProductCatalogCache
         /** @var array<string, mixed>|null $cached */
         $cached = Cache::get($key);
 
-        if (is_array($cached) && isset($cached['attributes'], $cached['etag'])) {
+        if (is_array($cached) && isset($cached['attributes'])) {
             return [
                 'product' => self::productFromAttributes($cached['attributes']),
-                'etag' => (string) $cached['etag'],
             ];
         }
 
@@ -144,20 +130,12 @@ class ProductCatalogCache
             ->whereKey($product->id)
             ->firstOrFail();
 
-        $etag = self::hashMaterial([
-            'show',
-            $fresh->id,
-            $fresh->updated_at?->timestamp ?? 0,
-        ]);
-
         Cache::put($key, [
             'attributes' => $fresh->getAttributes(),
-            'etag' => $etag,
         ], self::ttlSeconds());
 
         return [
             'product' => $fresh,
-            'etag' => $etag,
         ];
     }
 
@@ -193,27 +171,5 @@ class ProductCatalogCache
     public static function ttlSeconds(): int
     {
         return max((int) config('catalog.cache_ttl_seconds', 300), 60);
-    }
-
-    /**
-     * @param  list<mixed>  $material
-     */
-    public static function hashMaterial(array $material): string
-    {
-        return '"'.hash('xxh3', json_encode($material, JSON_THROW_ON_ERROR)).'"';
-    }
-
-    /**
-     * @param  iterable<int, Product>  $products
-     */
-    private static function fingerprintProducts(iterable $products): string
-    {
-        $parts = [];
-
-        foreach ($products as $product) {
-            $parts[] = $product->id.'@'.($product->updated_at?->timestamp ?? 0);
-        }
-
-        return implode(',', $parts);
     }
 }
