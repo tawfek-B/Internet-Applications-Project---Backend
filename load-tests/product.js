@@ -5,7 +5,10 @@ import { Rate, Trend } from 'k6/metrics';
 // Run:  k6 run load-tests/product.js
 // Other URL:  k6 run -e BASE_URL=http://127.0.0.1:8000/api/v1 load-tests/product.js
 const BASE = __ENV.BASE_URL || 'http://localhost:8000/api/v1';
-const PRODUCT_ID = __ENV.PRODUCT_ID || '1';
+const PRODUCT_ID = __ENV.PRODUCT_ID || '1'; // fallback only
+
+// Remember which product ids each page returned, for when the list answers 304 (no body).
+const productIdsByPage = {};
 
 export const options = {
   stages: [
@@ -52,7 +55,21 @@ export default function () {
     'list status 200 or 304': (r) => r.status === 200 || r.status === 304,
   });
 
-  const showRes = getWithEtag(`${BASE}/products/${PRODUCT_ID}`, productShowDuration);
+  // Use a product that really exists: take one from the page we just listed.
+  // The ETag cache is per URL, so the same product URL can return 304 next time.
+  let productId = PRODUCT_ID;
+  if (listRes.status === 200) {
+    const products = listRes.json('products') || [];
+    if (products.length > 0) {
+      productId = products[Math.floor(Math.random() * products.length)].id;
+      productIdsByPage[page] = products.map((product) => product.id);
+    }
+  } else if (productIdsByPage[page]) {
+    const ids = productIdsByPage[page];
+    productId = ids[Math.floor(Math.random() * ids.length)];
+  }
+
+  const showRes = getWithEtag(`${BASE}/products/${productId}`, productShowDuration);
   check(showRes, {
     'show status 200 or 304': (r) => r.status === 200 || r.status === 304,
   });

@@ -38,8 +38,10 @@ services:
             DB_READ_HOST: '${DB_READ_HOST:-mysql}'
             DB_STICKY: 'true'
             CATALOG_CACHE_ENABLED: 'true'
+            PHP_CLI_SERVER_WORKERS: '${PHP_CLI_SERVER_WORKERS:-8}'
         volumes:
             - '.:/var/www/html'
+            - './docker/php/99-performance.ini:/etc/php/8.5/cli/conf.d/99-performance.ini:ro'
         networks:
             - sail
         depends_on:
@@ -71,6 +73,7 @@ services:
             INVENTORY_MYSQL_PASSWORD: '${INVENTORY_DB_PASSWORD:-inventory}'
         networks:
             - sail
+        restart: on-failure
         depends_on:
             inventory-mysql:
                 condition: service_healthy
@@ -94,6 +97,8 @@ services:
                 - CMD
                 - mysqladmin
                 - ping
+                - '-h'
+                - '127.0.0.1'
                 - '-p${INVENTORY_DB_ROOT_PASSWORD:-inventory_root}'
             retries: 10
             timeout: 5s
@@ -132,13 +137,13 @@ services:
         image: 'mysql:8.4'
         ports:
             - '${FORWARD_DB_READ_PORT:-3308}:3306'
-        command: --server-id=2 --relay-log=relay-bin --skip-slave-start
+        command: --server-id=2 --relay-log=relay-bin --skip-replica-start
+        # No MYSQL_USER here: users come from the primary through replication,
+        # and MySQL refuses MYSQL_USER=root anyway.
         environment:
             MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
             MYSQL_ROOT_HOST: '%'
             MYSQL_DATABASE: '${DB_DATABASE}'
-            MYSQL_USER: '${DB_USERNAME}'
-            MYSQL_PASSWORD: '${DB_PASSWORD}'
             MYSQL_ALLOW_EMPTY_PASSWORD: 1
         volumes:
             - 'sail-mysql-read:/var/lib/mysql'
