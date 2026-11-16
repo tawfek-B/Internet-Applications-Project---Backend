@@ -29,17 +29,7 @@ class DatabaseSeeder extends Seeder
         /** @var InventoryClientInterface $inventory */
         $inventory = app(InventoryClientInterface::class);
 
-        Product::factory(10)->create()->each(function (Product $product) use ($inventory): void {
-            try {
-                $quantity = fake()->numberBetween(5, 50);
-                $inventory->setQuantity($product->id, $quantity);
-                $product->update(['stock' => $quantity]);
-            } catch (InventoryException $exception) {
-                Log::warning('Inventory seed skipped for product {id}: {message}', [
-                    'id' => $product->id,
-                    'message' => $exception->getMessage(),
-                ]);
-            }
-        });
+        Product::factory(1000)->create();
+        
     }
 }

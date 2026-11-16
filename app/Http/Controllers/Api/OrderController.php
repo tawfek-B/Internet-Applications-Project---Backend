@@ -14,6 +14,7 @@ use App\Support\ApiResponse;
 use App\Support\ContractResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Events\OrderStatusChanged;
 
 class OrderController extends Controller
 {
@@ -83,6 +84,8 @@ class OrderController extends Controller
             'title' => 'Order status updated',
             'message' => "Order #{$order->id} status changed to {$status}.",
         ]);
+
+        OrderStatusChanged::dispatch($order->fresh());
 
         return response()->json([
             'success' => true,

@@ -134,7 +134,7 @@ class PerformanceSeedBulkCommand extends Command
                     'name' => 'Bulk Product '.($existing + $created + $i + 1),
                     'description' => 'Generated for performance testing',
                     'price' => random_int(5, 500) + (random_int(0, 99) / 100),
-                    'stock' => random_int(0, 50),
+                    'stock' => random_int(5, 50),
                     'category' => 'bulk',
                     'image_url' => null,
                     'created_at' => $now,

@@ -56,4 +56,9 @@ class User extends Authenticatable implements JWTSubject
     {
         return $this->hasMany(Notification::class);
     }
+
+    public function isAdmin(): bool
+    {
+        return $this->is_admin;
+    }
 }

@@ -51,6 +51,8 @@ services:
                 condition: service_healthy
             inventory:
                 condition: service_started
+            rabbitmq:
+                condition: service_healthy
     inventory:
         build:
             context: ./inventory-service
@@ -67,7 +69,7 @@ services:
             PROTO_PATH: /proto/inventory.proto
             INVENTORY_DB_DRIVER: mysql
             INVENTORY_MYSQL_HOST: inventory-mysql
-            INVENTORY_MYSQL_PORT: '3306'
+            INVENTORY_MYSQL_PORT: '3309'
             INVENTORY_MYSQL_DATABASE: inventory
             INVENTORY_MYSQL_USER: '${INVENTORY_DB_USERNAME:-inventory}'
             INVENTORY_MYSQL_PASSWORD: '${INVENTORY_DB_PASSWORD:-inventory}'
@@ -175,6 +177,22 @@ services:
                 - ping
             retries: 3
             timeout: 5s
+    rabbitmq:
+        image: rabbitmq:3-management-alpine
+        ports:
+            - '${FORWARD_RABBITMQ_PORT:-5672}:5672'
+            - '${FORWARD_RABBITMQ_MANAGEMENT_PORT:-15672}:15672'
+        environment:
+          RABBITMQ_DEFAULT_USER: sail
+          RABBITMQ_DEFAULT_PASS: password
+        volumes:
+          - 'sail-rabbitmq:/var/lib/rabbitmq'
+        networks:
+          - sail
+        healthcheck:
+          test: rabbitmq-diagnostics -q ping
+          retries: 3
+          timeout: 5s
 networks:
     sail:
         driver: bridge
@@ -184,4 +202,6 @@ volumes:
     sail-mysql-read:
         driver: local
     inventory-mysql:
+        driver: local
+    sail-rabbitmq:
         driver: local

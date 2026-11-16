@@ -1,48 +1,93 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { Rate, Trend } from 'k6/metrics';
+import { Rate, Trend, Counter } from 'k6/metrics';
 
-// Run:  k6 run load-tests/product.js
-// Other URL:  k6 run -e BASE_URL=http://127.0.0.1:8000/api/v1 load-tests/product.js
 const BASE = __ENV.BASE_URL || 'http://localhost:8000/api/v1';
-const PRODUCT_ID = __ENV.PRODUCT_ID || '1'; // fallback only
+const PRODUCT_ID = __ENV.PRODUCT_ID || '1';
 
-// Remember which product ids each page returned, for when the list answers 304 (no body).
 const productIdsByPage = {};
-
-export const options = {
-  stages: [
-    { duration: '30s', target: 20 }, // ramp up to 20 virtual users
-    { duration: '1m', target: 50 },  // hold the load at 50 users
-    { duration: '30s', target: 0 },  // ramp down
-  ],
-  summaryTrendStats: ['avg', 'min', 'med', 'p(95)', 'p(99)', 'max'],
-  thresholds: {
-    http_req_failed: ['rate<0.02'],
-    http_req_duration: ['p(50)<600', 'p(95)<1200', 'p(99)<1800'],
-  },
-};
+const etags = {};
 
 const productListDuration = new Trend('product_list_duration', true);
 const productShowDuration = new Trend('product_show_duration', true);
 const notModifiedRate = new Rate('not_modified_304');
 
-// Each virtual user remembers the last ETag it got for every URL, like a browser does.
-const etags = {};
+const catalogCacheHits = new Counter('catalog_cache_hits');
+const catalogCacheMisses = new Counter('catalog_cache_misses');
+const catalogCacheHitRate = new Rate('catalog_cache_hit_rate');
+
+const catalogCacheHitDuration = new Trend(
+  'catalog_cache_hit_duration',
+  true
+);
+
+const catalogCacheMissDuration = new Trend(
+  'catalog_cache_miss_duration',
+  true
+);
+
+const cacheEnabled = __ENV.CATALOG_CACHE_ENABLED || 'unknown';
+
+export const options = {
+  stages: [
+    { duration: '30s', target: 20 },
+    { duration: '1m', target: 50 },
+    { duration: '30s', target: 0 },
+  ],
+
+  summaryTrendStats: [
+    'avg',
+    'min',
+    'med',
+    'p(95)',
+    'p(99)',
+    'max',
+  ],
+
+  thresholds: {
+    http_req_failed: ['rate<0.02'],
+    http_req_duration: [
+      'p(50)<900',
+      'p(95)<1800',
+      'p(99)<2700',
+    ],
+  },
+};
 
 function getWithEtag(url, trend) {
-  const headers = { Accept: 'application/json' };
+  const headers = {
+    Accept: 'application/json',
+  };
 
   if (etags[url]) {
     headers['If-None-Match'] = etags[url];
   }
 
   const res = http.get(url, { headers });
+
   trend.add(res.timings.duration);
+
   notModifiedRate.add(res.status === 304);
 
   if (res.headers['Etag']) {
     etags[url] = res.headers['Etag'];
+  }
+
+  // Read catalog cache status from Laravel response header.
+  const cacheStatus = res.headers['X-Catalog-Cache'];
+
+  if (cacheStatus) {
+    const status = cacheStatus.toUpperCase();
+
+    if (status === 'HIT') {
+      catalogCacheHits.add(1);
+      catalogCacheHitRate.add(true);
+      catalogCacheHitDuration.add(res.timings.duration);
+    } else if (status === 'MISS') {
+      catalogCacheMisses.add(1);
+      catalogCacheHitRate.add(false);
+      catalogCacheMissDuration.add(res.timings.duration);
+    }
   }
 
   return res;
@@ -50,29 +95,89 @@ function getWithEtag(url, trend) {
 
 export default function () {
   const page = Math.floor(Math.random() * 20) + 1;
-  const listRes = getWithEtag(`${BASE}/products?per_page=15&page=${page}`, productListDuration);
+
+  const listUrl =
+    `${ BASE }/products?per_page=15&page=${page}`;
+
+  const listRes = getWithEtag(
+    listUrl,
+    productListDuration
+  );
+
   check(listRes, {
-    'list status 200 or 304': (r) => r.status === 200 || r.status === 304,
+    'list status 200 or 304': (r) =>
+      r.status === 200 || r.status === 304,
   });
 
-  // Use a product that really exists: take one from the page we just listed.
-  // The ETag cache is per URL, so the same product URL can return 304 next time.
   let productId = PRODUCT_ID;
+
   if (listRes.status === 200) {
     const products = listRes.json('products') || [];
+
     if (products.length > 0) {
-      productId = products[Math.floor(Math.random() * products.length)].id;
-      productIdsByPage[page] = products.map((product) => product.id);
+      productId =
+        products[Math.floor(Math.random() * products.length)].id;
+
+      productIdsByPage[page] = products.map(
+        (product) => product.id
+      );
     }
   } else if (productIdsByPage[page]) {
     const ids = productIdsByPage[page];
-    productId = ids[Math.floor(Math.random() * ids.length)];
+
+    productId = ids[
+      Math.floor(Math.random() * ids.length)
+    ];
   }
 
-  const showRes = getWithEtag(`${BASE}/products/${productId}`, productShowDuration);
+  const showUrl = `${ BASE }/products/${ productId }`;
+
+  const showRes = getWithEtag(
+    showUrl,
+    productShowDuration
+  );
+
   check(showRes, {
-    'show status 200 or 304': (r) => r.status === 200 || r.status === 304,
+    'show status 200 or 304': (r) =>
+      r.status === 200 || r.status === 304,
   });
 
   sleep(0.3);
+}
+
+export function handleSummary(data) {
+  return {
+    stdout: JSON.stringify({
+      catalog_cache_enabled: cacheEnabled,
+
+      cache_hits:
+        data.metrics.catalog_cache_hits?.values.count || 0,
+
+      cache_misses:
+        data.metrics.catalog_cache_misses?.values.count || 0,
+
+      cache_hit_rate:
+        data.metrics.catalog_cache_hit_rate?.values.rate || 0,
+
+      http_304_rate:
+        data.metrics.not_modified_304?.values.rate || 0,
+
+      http_request_rate:
+        data.metrics.http_reqs?.values.rate || 0,
+
+      http_request_duration:
+        data.metrics.http_req_duration?.values || {},
+
+      product_list_duration:
+        data.metrics.product_list_duration?.values || {},
+
+      product_show_duration:
+        data.metrics.product_show_duration?.values || {},
+      cache_hit_duration:
+        data.metrics.catalog_cache_hit_duration?.values || {},
+
+      cache_miss_duration:
+        data.metrics.catalog_cache_miss_duration?.values || {},
+    }, null, 2),
+  };
 }

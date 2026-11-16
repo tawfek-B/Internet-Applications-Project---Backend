@@ -12,6 +12,7 @@ use App\Services\Inventory\InventoryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
+use App\Events\OrderCreated;
 
 class CreateOrderService
 {
@@ -63,6 +64,8 @@ class CreateOrderService
                     'title' => 'Order placed',
                     'message' => "Your order #{$order->id} was created successfully. Total: {$total}",
                 ]);
+
+                OrderCreated::dispatch($order);
 
                 return $order->load('orderItems.product');
             });

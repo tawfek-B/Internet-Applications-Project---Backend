@@ -17,7 +17,18 @@ class HttpInventoryClient implements InventoryClientInterface
     {
         $result = $this->request('GET', "/products/{$productId}/quantity");
 
-        return (int) ($result['available'] ?? 0);
+        logger()->info('Inventory getQuantity response', [
+            'product_id' => $productId,
+            'result' => $result,
+        ]);
+
+        $available = $result['available']
+            ?? $result['quantity']
+            ?? $result['stock']
+            ?? $result['data']['available']
+            ?? 0;
+
+        return (int) $available;
     }
 
     public function getQuantities(array $productIds): array
@@ -27,7 +38,7 @@ class HttpInventoryClient implements InventoryClientInterface
         }
 
         $ids = implode(',', array_map('intval', $productIds));
-        $result = $this->request('GET', '/products/quantities?ids='.$ids);
+        $result = $this->request('GET', '/products/quantities?ids=' . $ids);
 
         /** @var array<string, int|float|string> $raw */
         $raw = $result['quantities'] ?? [];
@@ -63,7 +74,7 @@ class HttpInventoryClient implements InventoryClientInterface
     public function release(string $reservationId): void
     {
         try {
-            $this->request('POST', '/reservations/'.rawurlencode($reservationId).'/release');
+            $this->request('POST', '/reservations/' . rawurlencode($reservationId) . '/release');
         } catch (InventoryException $exception) {
             Log::warning('inventory release failed', [
                 'reservation_id' => $reservationId,
@@ -85,7 +96,7 @@ class HttpInventoryClient implements InventoryClientInterface
      */
     private function request(string $method, string $path, ?array $json = null): array
     {
-        $url = rtrim($this->baseUrl, '/').$path;
+        $url = rtrim($this->baseUrl, '/') . $path;
 
         try {
             $pending = Http::timeout($this->timeoutSeconds)->acceptJson();

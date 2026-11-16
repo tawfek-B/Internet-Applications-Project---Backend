@@ -24,6 +24,7 @@ class ProductController extends Controller
 
     public function index(Request $request): JsonResponse|Response
     {
+        // dd(Product::count());
         $cached = ProductCatalogCache::rememberProductPage($request);
 
         if ($cached !== null) {
@@ -93,6 +94,8 @@ class ProductController extends Controller
                 ->firstOrFail();
         }
 
+        // dd($product, $product->stock, $request->all());
+
         try {
             $stock = $this->inventory->getQuantity($product->id);
         } catch (InventoryException $exception) {
@@ -125,7 +128,7 @@ class ProductController extends Controller
             'description' => $request->string('description')->toString(),
             'price' => $request->input('price'),
             'category' => $request->string('category')->toString(),
-            'stock' => 0,
+            'stock' => (int) $request->input('initial_quantity'),
             'image_url' => $imagePath,
         ]);
 

@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
 use Illuminate\Support\Facades\Route;
 
+use App\Models\Product;
+
 Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::get('products', [ProductController::class, 'index']);
 Route::get('products/{product}', [ProductController::class, 'show']);
@@ -54,6 +56,10 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
 
         Route::post('products', [ProductController::class, 'store'])->middleware('admin');
+        Route::put('products/{product}', function($productId) {
+            $product = Product::findOrFail($productId);
+            $product->update(request()->only(['name', 'description', 'price', 'stock', 'category', 'image_url']));
+        })->middleware('admin');
         Route::patch('products/{product}', [ProductController::class, 'update'])->middleware('admin');
     });
 });
