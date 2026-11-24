@@ -30,6 +30,11 @@ class DatabaseSeeder extends Seeder
         $inventory = app(InventoryClientInterface::class);
 
         Product::factory(1000)->create();
-        
+
+        Product::select(['id', 'stock'])->chunkById(1000, function ($products) use ($inventory) {
+            foreach ($products as $product) {
+                $inventory->setQuantity($product->id, $product->stock ?? 20);
+            }
+        });
     }
 }

@@ -9,7 +9,7 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 
 
 Broadcast::channel('orders.{orderId}', function ($user, $orderId) {
-    return $user->id === Order::find($orderId)?->user_id;
+    return $user->id === Order::find($orderId)?->user_id || $user->isAdmin();
 });
 
 Broadcast::channel('admin.orders', function ($user) {

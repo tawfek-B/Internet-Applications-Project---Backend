@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Symfony\Component\Process\ExecutableFinder;
+use Illuminate\Support\Facades\Broadcast;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -58,6 +59,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Product::observe(ProductObserver::class);
+
+        // Broadcast::exceptionHandler(function ($e) {
+        //     logger()->error('BROADCAST EXCEPTION', [
+        //         'message' => $e->getMessage(),
+        //         'class' => get_class($e),
+        //     ]);
+        // });
 
         RateLimiter::for('login', function (Request $request) {
             $email = (string) $request->input('email');

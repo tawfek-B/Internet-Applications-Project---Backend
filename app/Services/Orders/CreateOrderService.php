@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 use App\Events\OrderCreated;
+use Illuminate\Support\Facades\Log;
 
 class CreateOrderService
 {
@@ -64,6 +65,8 @@ class CreateOrderService
                     'title' => 'Order placed',
                     'message' => "Your order #{$order->id} was created successfully. Total: {$total}",
                 ]);
+
+                \Log::info('Dispatching OrderCreated', ['order' => $normalized, 'user_id' => $user->id, 'order_id' => $order->id]);
 
                 OrderCreated::dispatch($order);
 

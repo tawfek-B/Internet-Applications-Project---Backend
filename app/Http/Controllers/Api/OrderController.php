@@ -15,6 +15,9 @@ use App\Support\ContractResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Events\OrderStatusChanged;
+use App\Events\OrderCreated;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class OrderController extends Controller
 {
@@ -27,7 +30,7 @@ class OrderController extends Controller
             ->where('user_id', $this->authenticatedUserId($request))
             ->latest()
             ->get()
-            ->map(fn (Order $order) => ContractResponse::orderSummary($order))
+            ->map(fn(Order $order) => ContractResponse::orderSummary($order))
             ->values()
             ->all();
 
@@ -62,6 +65,8 @@ class OrderController extends Controller
             $request->input('items'),
         );
 
+        OrderCreated::dispatch($order);
+
         return ApiResponse::success(
             ['order' => OrderResource::make($order)],
             'Order created',
@@ -69,15 +74,20 @@ class OrderController extends Controller
         );
     }
 
-    public function updateStatus(UpdateTawfekOrderStatusRequest $request, int $orderId): JsonResponse
-    {
+
+    public function updateStatus(
+        UpdateTawfekOrderStatusRequest $request,
+        int $orderId
+    ): JsonResponse {
         $order = Order::query()->whereKey($orderId)->firstOrFail();
 
         $order->update([
             'status' => $request->input('status'),
         ]);
 
-        $status = $order->fresh()->status->value;
+        $order->refresh();
+
+        $status = $order->status->value;
 
         Notification::query()->create([
             'user_id' => $order->user_id,
@@ -85,13 +95,14 @@ class OrderController extends Controller
             'message' => "Order #{$order->id} status changed to {$status}.",
         ]);
 
-        OrderStatusChanged::dispatch($order->fresh());
+        OrderStatusChanged::dispatch($order);
 
         return response()->json([
             'success' => true,
             'message' => 'Order status updated successfully',
         ]);
     }
+
 
     private function authenticatedUserId(Request $request): int
     {
@@ -105,7 +116,6 @@ class OrderController extends Controller
     {
         return Order::query()
             ->whereKey($orderId)
-            ->where('user_id', $this->authenticatedUserId($request))
             ->first();
     }
 
