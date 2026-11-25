@@ -1,0 +1,14 @@
+NAME                                     IMAGE                            COMMAND                  SERVICE           CREATED          STATUS                    PORTS
+internetapplications-inventory-1         internetapplications-inventory   "docker-entrypoint.s…"   inventory         12 minutes ago   Up 11 minutes             50051-50052/tcp
+internetapplications-inventory-mysql-1   mysql:8.4                        "docker-entrypoint.s…"   inventory-mysql   12 minutes ago   Up 12 minutes (healthy)   0.0.0.0:3309->3306/tcp, [::]:3309->3306/tcp
+internetapplications-laravel1-1          sail-8.5/app                     "start-container"        laravel1          12 minutes ago   Up 11 minutes             80/tcp
+internetapplications-laravel3-1          sail-8.5/app                     "start-container"        laravel3          12 minutes ago   Up 11 minutes             80/tcp
+internetapplications-mysql-1             mysql:8.4                        "docker-entrypoint.s…"   mysql             12 minutes ago   Up 12 minutes (healthy)   0.0.0.0:3308->3306/tcp, [::]:3308->3306/tcp
+internetapplications-mysql-read-1        mysql:8.4                        "docker-entrypoint.s…"   mysql-read        12 minutes ago   Up 11 minutes (healthy)   0.0.0.0:3310->3306/tcp, [::]:3310->3306/tcp
+internetapplications-nginx-1             nginx:alpine                     "/docker-entrypoint.…"   nginx             12 minutes ago   Up 39 seconds             0.0.0.0:8000->80/tcp, [::]:8000->80/tcp
+internetapplications-rabbitmq-1          rabbitmq:3-management-alpine     "docker-entrypoint.s…"   rabbitmq          12 minutes ago   Up 11 minutes (healthy)   0.0.0.0:15672->15672/tcp, [::]:15672->15672/tcp
+internetapplications-redis-1             redis:alpine                     "docker-entrypoint.s…"   redis             12 minutes ago   Up 11 minutes (healthy)   0.0.0.0:6380->6379/tcp, [::]:6380->6379/tcp
+internetapplications-reverb-1            sail-8.5/app                     "start-container php…"   reverb            12 minutes ago   Up 11 minutes             0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+internetapplications-worker1-1           sail-8.5/app                     "start-container sh …"   worker1           12 minutes ago   Up 11 minutes             80/tcp
+internetapplications-worker2-1           sail-8.5/app                     "start-container sh …"   worker2           12 minutes ago   Up 11 minutes             80/tcp
+internetapplications-worker3-1           sail-8.5/app                     "start-container sh …"   worker3           12 minutes ago   Up 11 minutes             80/tcp

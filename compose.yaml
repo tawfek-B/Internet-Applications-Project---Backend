@@ -1,3 +1,44 @@
+# Shared environment for every Laravel container (web instances + workers).
+# Defined once so the three instances can't drift apart.
+x-laravel-env: &laravel-env
+    WWWUSER: '${WWWUSER:-1000}'
+    LARAVEL_SAIL: 1
+    PHP_CLI_SERVER_WORKERS: 4
+    DB_CONNECTION: mysql
+    DB_HOST: mysql
+    DB_PORT: '3306'
+    DB_DATABASE: '${DB_DATABASE}'
+    DB_USERNAME: '${DB_USERNAME}'
+    DB_PASSWORD: '${DB_PASSWORD}'
+    DB_WRITE_HOST: mysql
+    DB_READ_HOST: '${DB_READ_HOST:-mysql}'
+    DB_STICKY: 'true'
+    APP_URL: '${APP_URL:-http://localhost:8000}'
+    INVENTORY_DRIVER: http
+    INVENTORY_HTTP_URL: http://inventory:50052
+    INVENTORY_GRPC_HOST: inventory:50051
+    CACHE_STORE: redis
+    REDIS_HOST: redis
+    REDIS_PORT: '6379'
+    SESSION_DRIVER: database
+    QUEUE_CONNECTION: rabbitmq
+    RABBITMQ_HOST: rabbitmq
+    RABBITMQ_PORT: '5672'
+    RABBITMQ_USER: sail
+    RABBITMQ_PASSWORD: password
+    CATALOG_CACHE_ENABLED: 'true'
+    FILESYSTEM_DISK: public
+
+x-laravel-depends: &laravel-depends
+    mysql:
+        condition: service_healthy
+    redis:
+        condition: service_healthy
+    rabbitmq:
+        condition: service_healthy
+    inventory:
+        condition: service_started
+
 services:
     nginx:
         image: nginx:alpine
@@ -24,181 +65,68 @@ services:
         env_file:
             - .env.docker
         environment:
-            WWWUSER: '${WWWUSER:-1000}'
-            LARAVEL_SAIL: 1
+            <<: *laravel-env
             APP_INSTANCE: laravel1
-            DB_CONNECTION: mysql
-            DB_HOST: mysql
-            DB_PORT: '3306'
-            DB_DATABASE: '${DB_DATABASE}'
-            DB_USERNAME: '${DB_USERNAME}'
-            DB_PASSWORD: '${DB_PASSWORD}'
-            APP_URL: '${APP_URL:-http://localhost:8000}'
-            INVENTORY_DRIVER: http
-            INVENTORY_HTTP_URL: http://inventory:50052
-            INVENTORY_GRPC_HOST: inventory:50051
-            CACHE_STORE: redis
-            REDIS_HOST: redis
-            REDIS_PORT: '6379'
-            SESSION_DRIVER: database          # shared – required for multi-instance
-            QUEUE_CONNECTION: rabbitmq
-            RABBITMQ_HOST: rabbitmq
-            RABBITMQ_PORT: '5672'
-            RABBITMQ_USER: sail
-            RABBITMQ_PASSWORD: password
-            DB_WRITE_HOST: mysql
-            DB_READ_HOST: '${DB_READ_HOST:-mysql}'
-            DB_STICKY: 'true'
-            CATALOG_CACHE_ENABLED: 'true'
-            FILESYSTEM_DISK: public           # see note about shared storage below
         volumes:
             - '.:/var/www/html'
-            - 'sail-storage:/var/www/html/storage/app/public'   # shared uploads
+            - 'sail-storage:/var/www/html/storage/app/public'
             - './docker/php/99-performance.ini:/etc/php/8.5/cli/conf.d/99-performance.ini:ro'
         networks:
             - sail
-        depends_on:
-            mysql:
-                condition: service_healthy
-            redis:
-                condition: service_healthy
-            inventory:
-                condition: service_started
-            rabbitmq:
-                condition: service_healthy
+        depends_on: *laravel-depends
 
     laravel2:
         <<: *laravel-app
         environment:
-            WWWUSER: '${WWWUSER:-1000}'
-            LARAVEL_SAIL: 1
+            <<: *laravel-env
             APP_INSTANCE: laravel2
-            DB_CONNECTION: mysql
-            DB_HOST: mysql
-            DB_PORT: '3306'
-            DB_DATABASE: '${DB_DATABASE}'
-            DB_USERNAME: '${DB_USERNAME}'
-            DB_PASSWORD: '${DB_PASSWORD}'
-            APP_URL: '${APP_URL:-http://localhost:8000}'
-            INVENTORY_DRIVER: http
-            INVENTORY_HTTP_URL: http://inventory:50052
-            INVENTORY_GRPC_HOST: inventory:50051
-            CACHE_STORE: redis
-            REDIS_HOST: redis
-            REDIS_PORT: '6379'
-            SESSION_DRIVER: database
-            QUEUE_CONNECTION: rabbitmq
-            RABBITMQ_HOST: rabbitmq
-            RABBITMQ_PORT: '5672'
-            RABBITMQ_USER: sail
-            RABBITMQ_PASSWORD: password
-            DB_WRITE_HOST: mysql
-            DB_READ_HOST: '${DB_READ_HOST:-mysql}'
-            DB_STICKY: 'true'
-            CATALOG_CACHE_ENABLED: 'true'
-            FILESYSTEM_DISK: public
 
     laravel3:
         <<: *laravel-app
         environment:
-            WWWUSER: '${WWWUSER:-1000}'
-            LARAVEL_SAIL: 1
+            <<: *laravel-env
             APP_INSTANCE: laravel3
-            DB_CONNECTION: mysql
-            DB_HOST: mysql
-            DB_PORT: '3306'
-            DB_DATABASE: '${DB_DATABASE}'
-            DB_USERNAME: '${DB_USERNAME}'
-            DB_PASSWORD: '${DB_PASSWORD}'
-            APP_URL: '${APP_URL:-http://localhost:8000}'
-            INVENTORY_DRIVER: http
-            INVENTORY_HTTP_URL: http://inventory:50052
-            INVENTORY_GRPC_HOST: inventory:50051
-            CACHE_STORE: redis
-            REDIS_HOST: redis
-            REDIS_PORT: '6379'
-            SESSION_DRIVER: database
-            QUEUE_CONNECTION: rabbitmq
-            RABBITMQ_HOST: rabbitmq
-            RABBITMQ_PORT: '5672'
-            RABBITMQ_USER: sail
-            RABBITMQ_PASSWORD: password
-            DB_WRITE_HOST: mysql
-            DB_READ_HOST: '${DB_READ_HOST:-mysql}'
-            DB_STICKY: 'true'
-            CATALOG_CACHE_ENABLED: 'true'
-            FILESYSTEM_DISK: public
 
-    # 3 workers – same queue
     worker1:
         <<: *laravel-app
-        command: php artisan rabbitmq:consume --sleep=1 --tries=3 --timeout=60
+        command: >
+            sh -c "php artisan rabbitmq:queue-declare default rabbitmq &&
+                   php artisan rabbitmq:consume --sleep=1 --tries=3 --timeout=60"
+        restart: unless-stopped
         environment:
-            WWWUSER: '${WWWUSER:-1000}'
-            LARAVEL_SAIL: 1
+            <<: *laravel-env
             APP_INSTANCE: worker1
-            QUEUE_CONNECTION: rabbitmq
-            RABBITMQ_HOST: rabbitmq
-            RABBITMQ_PORT: '5672'
-            RABBITMQ_USER: sail
-            RABBITMQ_PASSWORD: password
-            REDIS_HOST: redis
-            DB_HOST: mysql
-            DB_DATABASE: '${DB_DATABASE}'
-            DB_USERNAME: '${DB_USERNAME}'
-            DB_PASSWORD: '${DB_PASSWORD}'
-        depends_on:
-            rabbitmq:
-                condition: service_healthy
+        depends_on: *laravel-depends
 
     worker2:
         <<: *laravel-app
-        command: php artisan rabbitmq:consume --sleep=1 --tries=3 --timeout=60
+        command: >
+            sh -c "php artisan rabbitmq:queue-declare default rabbitmq &&
+                   php artisan rabbitmq:consume --sleep=1 --tries=3 --timeout=60"
+        restart: unless-stopped
         environment:
-            WWWUSER: '${WWWUSER:-1000}'
-            LARAVEL_SAIL: 1
+            <<: *laravel-env
             APP_INSTANCE: worker2
-            QUEUE_CONNECTION: rabbitmq
-            RABBITMQ_HOST: rabbitmq
-            RABBITMQ_PORT: '5672'
-            RABBITMQ_USER: sail
-            RABBITMQ_PASSWORD: password
-            REDIS_HOST: redis
-            DB_HOST: mysql
-            DB_DATABASE: '${DB_DATABASE}'
-            DB_USERNAME: '${DB_USERNAME}'
-            DB_PASSWORD: '${DB_PASSWORD}'
-        depends_on:
-            rabbitmq:
-                condition: service_healthy
+        depends_on: *laravel-depends
 
     worker3:
         <<: *laravel-app
-        command: php artisan rabbitmq:consume --sleep=1 --tries=3 --timeout=60
+        command: >
+            sh -c "php artisan rabbitmq:queue-declare default rabbitmq &&
+                   php artisan rabbitmq:consume --sleep=1 --tries=3 --timeout=60"
+        restart: unless-stopped
         environment:
-            WWWUSER: '${WWWUSER:-1000}'
-            LARAVEL_SAIL: 1
+            <<: *laravel-env
             APP_INSTANCE: worker3
-            QUEUE_CONNECTION: rabbitmq
-            RABBITMQ_HOST: rabbitmq
-            RABBITMQ_PORT: '5672'
-            RABBITMQ_USER: sail
-            RABBITMQ_PASSWORD: password
-            REDIS_HOST: redis
-            DB_HOST: mysql
-            DB_DATABASE: '${DB_DATABASE}'
-            DB_USERNAME: '${DB_USERNAME}'
-            DB_PASSWORD: '${DB_PASSWORD}'
-        depends_on:
-            rabbitmq:
-                condition: service_healthy
+        depends_on: *laravel-depends
+
     inventory:
         build:
             context: ./inventory-service
             dockerfile: Dockerfile
-        ports:
-            - '${INVENTORY_PORT:-50051}:50051'
-            - '${INVENTORY_HTTP_PORT:-50052}:50052'
+        expose:
+            - "50051"
+            - "50052"
         volumes:
             - './proto:/proto:ro'
         environment:
@@ -208,7 +136,7 @@ services:
             PROTO_PATH: /proto/inventory.proto
             INVENTORY_DB_DRIVER: mysql
             INVENTORY_MYSQL_HOST: inventory-mysql
-            INVENTORY_MYSQL_PORT: '3309'
+            INVENTORY_MYSQL_PORT: '3306'
             INVENTORY_MYSQL_DATABASE: inventory
             INVENTORY_MYSQL_USER: '${INVENTORY_DB_USERNAME:-inventory}'
             INVENTORY_MYSQL_PASSWORD: '${INVENTORY_DB_PASSWORD:-inventory}'
@@ -218,8 +146,7 @@ services:
         depends_on:
             inventory-mysql:
                 condition: service_healthy
-    # Inventory service owns its own MySQL server (database per service):
-    # Laravel never connects here, it only talks to the inventory service over HTTP/gRPC.
+
     inventory-mysql:
         image: 'mysql:8.4'
         ports:
@@ -245,6 +172,7 @@ services:
             timeout: 5s
             interval: 5s
             start_period: 30s
+
     mysql:
         image: 'mysql:8.4'
         ports:
@@ -274,32 +202,12 @@ services:
             timeout: 5s
             interval: 5s
             start_period: 30s
-    reverb:
-        image: sail-8.5/app
-        command: php artisan reverb:start --host=0.0.0.0 --port=8080 --debug
-        ports:
-            - '${REVERB_PORT:-8080}:8080'
-        env_file:
-            - .env.docker
-        environment:
-            WWWUSER: '${WWWUSER:-1000}'
-            LARAVEL_SAIL: 1
-            REDIS_HOST: redis
-            REDIS_PORT: '6379'
-        volumes:
-            - '.:/var/www/html'
-        networks:
-            - sail
-        depends_on:
-            redis:
-                condition: service_healthy
+
     mysql-read:
         image: 'mysql:8.4'
         ports:
-            - '${FORWARD_DB_READ_PORT:-3308}:3306'
+            - '${FORWARD_DB_READ_PORT:-3310}:3306'
         command: --server-id=2 --relay-log=relay-bin --skip-replica-start
-        # No MYSQL_USER here: users come from the primary through replication,
-        # and MySQL refuses MYSQL_USER=root anyway.
         environment:
             MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
             MYSQL_ROOT_HOST: '%'
@@ -322,10 +230,11 @@ services:
             timeout: 5s
             interval: 5s
             start_period: 30s
+
     redis:
         image: 'redis:alpine'
         ports:
-            - '${FORWARD_REDIS_PORT:-6379}:6379'
+            - '${FORWARD_REDIS_PORT:-6380}:6379'
         networks:
             - sail
         healthcheck:
@@ -335,22 +244,45 @@ services:
                 - ping
             retries: 3
             timeout: 5s
+
     rabbitmq:
         image: rabbitmq:3-management-alpine
         ports:
-            - '${FORWARD_RABBITMQ_PORT:-5672}:5672'
             - '${FORWARD_RABBITMQ_MANAGEMENT_PORT:-15672}:15672'
         environment:
-          RABBITMQ_DEFAULT_USER: sail
-          RABBITMQ_DEFAULT_PASS: password
+            RABBITMQ_DEFAULT_USER: sail
+            RABBITMQ_DEFAULT_PASS: password
         volumes:
-          - 'sail-rabbitmq:/var/lib/rabbitmq'
+            - 'sail-rabbitmq:/var/lib/rabbitmq'
         networks:
-          - sail
+            - sail
         healthcheck:
-          test: rabbitmq-diagnostics -q ping
-          retries: 3
-          timeout: 5s
+            test: rabbitmq-diagnostics -q ping
+            retries: 5
+            timeout: 10s
+            interval: 10s
+            start_period: 20s
+
+    reverb:
+        image: sail-8.5/app
+        command: php artisan reverb:start --host=0.0.0.0 --port=8080 --debug
+        ports:
+            - '${REVERB_PORT:-8080}:8080'
+        env_file:
+            - .env.docker
+        environment:
+            WWWUSER: '${WWWUSER:-1000}'
+            LARAVEL_SAIL: 1
+            REDIS_HOST: redis
+            REDIS_PORT: '6379'
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            redis:
+                condition: service_healthy
+
 networks:
     sail:
         driver: bridge

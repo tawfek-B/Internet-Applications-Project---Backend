@@ -8,6 +8,7 @@ export default defineConfig({
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.js'],
             refresh: true,
+            detectTls: false,
             fonts: [
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
@@ -20,11 +21,8 @@ export default defineConfig({
         host: '0.0.0.0',
         port: 5173,
         strictPort: true,
-
-        hmr: {
-            host: 'internetapplications.test',
-            protocol: 'wss',
-            clientPort: 5174,
-        },
+        origin: 'http://localhost:5173',
+        watch: { usePolling: true },
+        cors: true,
     },
 });

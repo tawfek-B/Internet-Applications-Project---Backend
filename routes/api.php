@@ -99,6 +99,6 @@ Route::get('/reverb-test', function () {
     }
 });
 
-Route::get('/instance', function () {
-    return response(gethostname() . PHP_EOL);
-});
+Route::get('/instance', fn () => response()->json([
+    'instance' => env('APP_INSTANCE', gethostname()),
+]));

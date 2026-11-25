@@ -1,0 +1,8 @@
+seq 1 500 | xargs -P20 -I{} sh -c 'echo "$(curl -fsS http://localhost:8000/api/instance)"' | sort | uniq -c | tee evidence/01-app-side.txt
+
+failover:
+( seq 1 600 | xargs -P20 -I{} curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/api/instance > evidence/02-codes.txt ) &
+sleep 1; docker compose stop laravel2; wait
+sort evidence/02-codes.txt | uniq -c | tee evidence/02-status-codes.txt
+docker compose ps | tee evidence/02-ps.txt
+seq 1 300 | xargs -P20 -I{} sh -c 'echo "$(curl -fsS http://localhost:8000/api/instance)"' | sort | uniq -c | tee evidence/02-two-instances.txt
